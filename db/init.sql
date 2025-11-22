@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS cms_pages (
     body TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cms_blocks (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Seed with deliberately unsafe content for XSS practice
 INSERT INTO cms_pages(slug, title, body)
 VALUES
