@@ -13,12 +13,20 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
+mod domain;
+mod repo;
+use domain::*;
+use repo::*;
+
 #[derive(Serialize)]
 struct Health { status: &'static str, now: DateTime<Utc> }
 
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
+    iss_repo: PgRepos,
+    osdr_repo: PgRepos,
+    cache_repo: PgRepos,
     nasa_url: String,          // OSDR
     nasa_key: String,          // ключ NASA
     fallback_url: String,      // ISS where-the-iss
@@ -58,8 +66,15 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPoolOptions::new().max_connections(5).connect(&db_url).await?;
     init_db(&pool).await?;
 
+    let iss_repo = PgRepos::new(pool.clone());
+    let osdr_repo = PgRepos::new(pool.clone());
+    let cache_repo = PgRepos::new(pool.clone());
+
     let state = AppState {
         pool: pool.clone(),
+        iss_repo,
+        osdr_repo,
+        cache_repo,
         nasa_url: nasa_url.clone(),
         nasa_key,
         fallback_url: fallback_url.clone(),
@@ -199,28 +214,18 @@ async fn init_db(pool: &PgPool) -> anyhow::Result<()> {
 
 /* ---------- ISS ---------- */
 async fn last_iss(State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
-    let row_opt = sqlx::query(
-        "SELECT id, fetched_at, source_url, payload
-         FROM iss_fetch_log
-         ORDER BY id DESC LIMIT 1"
-    ).fetch_optional(&st.pool).await
-     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if let Some(row) = row_opt {
-        let id: i64 = row.get("id");
-        let fetched_at: DateTime<Utc> = row.get::<DateTime<Utc>, _>("fetched_at");
-        let source_url: String = row.get("source_url");
-        let payload: Value = row.try_get("payload").unwrap_or(serde_json::json!({}));
-        return Ok(Json(serde_json::json!({
-            "id": id, "fetched_at": fetched_at, "source_url": source_url, "payload": payload
-        })));
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
+    match st.iss_repo.get_latest_iss_data().await {
+        Ok(Some(iss_data)) => Ok(Json(serde_json::json!({
+            "id": iss_data.id, "fetched_at": iss_data.fetched_at, "source_url": iss_data.source_url, "payload": iss_data.payload
+        }))),
+        Ok(None) => Ok(Json(serde_json::json!({"message":"no data"}))),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
-    Ok(Json(serde_json::json!({"message":"no data"})))
 }
 
 async fn trigger_iss(State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
     fetch_and_store_iss(&st.pool, &st.fallback_url).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     last_iss(State(st)).await
@@ -241,12 +246,11 @@ struct Trend {
 }
 
 async fn iss_trend(State(st): State<AppState>)
--> Result<Json<Trend>, (StatusCode, String)> {
-    let rows = sqlx::query("SELECT fetched_at, payload FROM iss_fetch_log ORDER BY id DESC LIMIT 2")
-        .fetch_all(&st.pool).await
+-> std::result::Result<Json<Trend>, (StatusCode, String)> {
+    let iss_data_list = st.iss_repo.get_iss_trend_data().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if rows.len() < 2 {
+    if iss_data_list.len() < 2 {
         return Ok(Json(Trend {
             movement: false, delta_km: 0.0, dt_sec: 0.0, velocity_kmh: None,
             from_time: None, to_time: None,
@@ -254,10 +258,10 @@ async fn iss_trend(State(st): State<AppState>)
         }));
     }
 
-    let t2: DateTime<Utc> = rows[0].get("fetched_at");
-    let t1: DateTime<Utc> = rows[1].get("fetched_at");
-    let p2: Value = rows[0].get("payload");
-    let p1: Value = rows[1].get("payload");
+    let t2: DateTime<Utc> = iss_data_list[0].fetched_at;
+    let t1: DateTime<Utc> = iss_data_list[1].fetched_at;
+    let p2: Value = iss_data_list[0].payload.clone();
+    let p1: Value = iss_data_list[1].payload.clone();
 
     let lat1 = num(&p1["latitude"]);
     let lon1 = num(&p1["longitude"]);
@@ -302,14 +306,14 @@ fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
 /* ---------- OSDR ---------- */
 async fn osdr_sync(State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
     let written = fetch_and_store_osdr(&st).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({ "written": written })))
 }
 
 async fn osdr_list(State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
     let limit =  std::env::var("OSDR_LIST_LIMIT").ok()
         .and_then(|s| s.parse::<i64>().ok()).unwrap_or(20);
 
@@ -339,7 +343,7 @@ async fn osdr_list(State(st): State<AppState>)
 /* ---------- Универсальная витрина space_cache ---------- */
 
 async fn space_latest(Path(src): Path<String>, State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
     let row = sqlx::query(
         "SELECT fetched_at, payload FROM space_cache
          WHERE source = $1 ORDER BY id DESC LIMIT 1"
@@ -355,7 +359,7 @@ async fn space_latest(Path(src): Path<String>, State(st): State<AppState>)
 }
 
 async fn space_refresh(Query(q): Query<HashMap<String,String>>, State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
     let list = q.get("src").cloned().unwrap_or_else(|| "apod,neo,flr,cme,spacex".to_string());
     let mut done = Vec::new();
     for s in list.split(',').map(|x| x.trim().to_lowercase()) {
@@ -380,7 +384,7 @@ async fn latest_from_cache(pool: &PgPool, src: &str) -> Value {
 }
 
 async fn space_summary(State(st): State<AppState>)
--> Result<Json<Value>, (StatusCode, String)> {
+-> std::result::Result<Json<Value>, (StatusCode, String)> {
     let apod   = latest_from_cache(&st.pool, "apod").await;
     let neo    = latest_from_cache(&st.pool, "neo").await;
     let flr    = latest_from_cache(&st.pool, "flr").await;
@@ -404,8 +408,12 @@ async fn space_summary(State(st): State<AppState>)
 /* ---------- Фетчеры и запись ---------- */
 
 async fn write_cache(pool: &PgPool, source: &str, payload: Value) -> anyhow::Result<()> {
+    // Create domain model and validate
+    let space_cache = SpaceCache::new(source.to_string(), payload);
+    space_cache.validate()?;
+
     sqlx::query("INSERT INTO space_cache(source, payload) VALUES ($1,$2)")
-        .bind(source).bind(payload).execute(pool).await?;
+        .bind(&space_cache.source).bind(&space_cache.payload).execute(pool).await?;
     Ok(())
 }
 
@@ -510,8 +518,13 @@ async fn fetch_and_store_iss(pool: &PgPool, url: &str) -> anyhow::Result<()> {
     let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build()?;
     let resp = client.get(url).send().await?;
     let json: Value = resp.json().await?;
+
+    // Create domain model and validate
+    let iss_data = IssData::new(url.to_string(), json);
+    iss_data.validate()?;
+
     sqlx::query("INSERT INTO iss_fetch_log (source_url, payload) VALUES ($1, $2)")
-        .bind(url).bind(json).execute(pool).await?;
+        .bind(&iss_data.source_url).bind(&iss_data.payload).execute(pool).await?;
     Ok(())
 }
 async fn fetch_and_store_osdr(st: &AppState) -> anyhow::Result<usize> {
@@ -532,19 +545,24 @@ async fn fetch_and_store_osdr(st: &AppState) -> anyhow::Result<usize> {
         let title = s_pick(&item, &["title","name","label"]);
         let status = s_pick(&item, &["status","state","lifecycle"]);
         let updated = t_pick(&item, &["updated","updated_at","modified","lastUpdated","timestamp"]);
-        if let Some(ds) = id.clone() {
+
+        // Create domain model and validate
+        let osdr_item = OsdrItem::with_fields(id, title, status, updated, item);
+        osdr_item.validate()?;
+
+        if let Some(ds) = osdr_item.dataset_id.clone() {
             sqlx::query(
                 "INSERT INTO osdr_items(dataset_id, title, status, updated_at, raw)
                  VALUES($1,$2,$3,$4,$5)
                  ON CONFLICT (dataset_id) DO UPDATE
                  SET title=EXCLUDED.title, status=EXCLUDED.status,
                      updated_at=EXCLUDED.updated_at, raw=EXCLUDED.raw"
-            ).bind(ds).bind(title).bind(status).bind(updated).bind(item).execute(&st.pool).await?;
+            ).bind(ds).bind(osdr_item.title).bind(osdr_item.status).bind(osdr_item.updated_at).bind(osdr_item.raw).execute(&st.pool).await?;
         } else {
             sqlx::query(
                 "INSERT INTO osdr_items(dataset_id, title, status, updated_at, raw)
                  VALUES($1,$2,$3,$4,$5)"
-            ).bind::<Option<String>>(None).bind(title).bind(status).bind(updated).bind(item).execute(&st.pool).await?;
+            ).bind::<Option<String>>(None).bind(osdr_item.title).bind(osdr_item.status).bind(osdr_item.updated_at).bind(osdr_item.raw).execute(&st.pool).await?;
         }
         written += 1;
     }
