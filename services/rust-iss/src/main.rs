@@ -16,9 +16,11 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 mod domain;
 mod repo;
 mod services;
+mod clients;
 use domain::*;
 use repo::*;
 use services::*;
+use clients::{HttpClientConfig, NasaClient, NasaClientImpl, IssClient, IssClientImpl, SpaceXClient, SpaceXClientImpl};
 
 #[derive(Serialize)]
 struct Health { status: &'static str, now: DateTime<Utc> }
@@ -29,6 +31,9 @@ struct AppState {
     iss_service: IssServiceImpl<PgRepos>,
     osdr_service: OsdrServiceImpl<PgRepos>,
     cache_service: CacheServiceImpl<PgRepos>,
+    nasa_client: NasaClientImpl,
+    iss_client: IssClientImpl,
+    spacex_client: SpaceXClientImpl,
     nasa_url: String,          // OSDR
     nasa_key: String,          // ключ NASA
     fallback_url: String,      // ISS where-the-iss
@@ -48,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
     let _ = tracing::subscriber::set_global_default(subscriber);
 
     dotenvy::dotenv().ok();
+
+    let http_config = HttpClientConfig::default();
 
     let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL is required");
 
@@ -76,11 +83,18 @@ async fn main() -> anyhow::Result<()> {
     let osdr_service = OsdrServiceImpl::new(osdr_repo);
     let cache_service = CacheServiceImpl::new(cache_repo);
 
+    let nasa_client = NasaClientImpl::new(http_config.clone());
+    let iss_client = IssClientImpl::new(http_config.clone());
+    let spacex_client = SpaceXClientImpl::new(http_config.clone());
+
     let state = AppState {
         pool: pool.clone(),
         iss_service,
         osdr_service,
         cache_service,
+        nasa_client,
+        iss_client,
+        spacex_client,
         nasa_url: nasa_url.clone(),
         nasa_key,
         fallback_url: fallback_url.clone(),
@@ -102,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_and_store_iss(&st.pool, &st.fallback_url).await { error!("iss err {e:?}") }
+                if let Err(e) = fetch_and_store_iss(&st).await { error!("iss err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.every_iss)).await;
             }
         });
@@ -232,7 +246,7 @@ async fn last_iss(State(st): State<AppState>)
 
 async fn trigger_iss(State(st): State<AppState>)
 -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    fetch_and_store_iss(&st.pool, &st.fallback_url).await
+    fetch_and_store_iss(&st).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     last_iss(State(st)).await
 }
@@ -396,15 +410,7 @@ async fn write_cache(st: &AppState, source: &str, payload: Value) -> anyhow::Res
 
 // APOD
 async fn fetch_apod(st: &AppState) -> anyhow::Result<()> {
-    let url = "https://api.nasa.gov/planetary/apod";
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-    let mut req = client.get(url).query(&[("thumbs","true")]);
-    if !st.nasa_key.is_empty() { req = req.query(&[("api_key",&st.nasa_key)]); }
-    let resp = req.send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("APOD request failed with status: {}", resp.status());
-    }
-    let json: Value = resp.json().await?;
+    let json = st.nasa_client.fetch_apod(Some(&st.nasa_key)).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
     write_cache(st, "apod", json).await
 }
 
@@ -412,18 +418,7 @@ async fn fetch_apod(st: &AppState) -> anyhow::Result<()> {
 async fn fetch_neo_feed(st: &AppState) -> anyhow::Result<()> {
     let today = Utc::now().date_naive();
     let start = today - chrono::Days::new(2);
-    let url = "https://api.nasa.gov/neo/rest/v1/feed";
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-    let mut req = client.get(url).query(&[
-        ("start_date", start.to_string()),
-        ("end_date", today.to_string()),
-    ]);
-    if !st.nasa_key.is_empty() { req = req.query(&[("api_key",&st.nasa_key)]); }
-    let resp = req.send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("NEO request failed with status: {}", resp.status());
-    }
-    let json: Value = resp.json().await?;
+    let json = st.nasa_client.fetch_neo_feed(&start.to_string(), &today.to_string(), Some(&st.nasa_key)).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
     write_cache(st, "neo", json).await
 }
 
@@ -435,28 +430,18 @@ async fn fetch_donki(st: &AppState) -> anyhow::Result<()> {
 }
 async fn fetch_donki_flr(st: &AppState) -> anyhow::Result<()> {
     let (from,to) = last_days(5);
-    let url = "https://api.nasa.gov/DONKI/FLR";
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-    let mut req = client.get(url).query(&[("startDate",from),("endDate",to)]);
-    if !st.nasa_key.is_empty() { req = req.query(&[("api_key",&st.nasa_key)]); }
-    let json: Value = req.send().await?.json().await?;
+    let json = st.nasa_client.fetch_donki_flr(&from, &to, Some(&st.nasa_key)).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
     write_cache(st, "flr", json).await
 }
 async fn fetch_donki_cme(st: &AppState) -> anyhow::Result<()> {
     let (from,to) = last_days(5);
-    let url = "https://api.nasa.gov/DONKI/CME";
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-    let mut req = client.get(url).query(&[("startDate",from),("endDate",to)]);
-    if !st.nasa_key.is_empty() { req = req.query(&[("api_key",&st.nasa_key)]); }
-    let json: Value = req.send().await?.json().await?;
+    let json = st.nasa_client.fetch_donki_cme(&from, &to, Some(&st.nasa_key)).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
     write_cache(st, "cme", json).await
 }
 
 // SpaceX
 async fn fetch_spacex_next(st: &AppState) -> anyhow::Result<()> {
-    let url = "https://api.spacexdata.com/v4/launches/next";
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-    let json: Value = client.get(url).send().await?.json().await?;
+    let json = st.spacex_client.fetch_next_launch().await.map_err(|e| anyhow::anyhow!("SpaceX client error: {}", e))?;
     write_cache(st, "spacex", json).await
 }
 
@@ -491,26 +476,19 @@ fn t_pick(v: &Value, keys: &[&str]) -> Option<DateTime<Utc>> {
     }
     None
 }
-async fn fetch_and_store_iss(pool: &PgPool, url: &str) -> anyhow::Result<()> {
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build()?;
-    let resp = client.get(url).send().await?;
-    let json: Value = resp.json().await?;
+async fn fetch_and_store_iss(st: &AppState) -> anyhow::Result<()> {
+    let json = st.iss_client.fetch_iss_position().await.map_err(|e| anyhow::anyhow!("ISS client error: {}", e))?;
 
     // Create domain model and validate
-    let iss_data = IssData::new(url.to_string(), json);
+    let iss_data = IssData::new(st.fallback_url.clone(), json);
     iss_data.validate()?;
 
     sqlx::query("INSERT INTO iss_fetch_log (source_url, payload) VALUES ($1, $2)")
-        .bind(&iss_data.source_url).bind(&iss_data.payload).execute(pool).await?;
+        .bind(&iss_data.source_url).bind(&iss_data.payload).execute(&st.pool).await?;
     Ok(())
 }
 async fn fetch_and_store_osdr(st: &AppState) -> anyhow::Result<usize> {
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-    let resp = client.get(&st.nasa_url).send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("OSDR request status {}", resp.status());
-    }
-    let json: Value = resp.json().await?;
+    let json = st.nasa_client.fetch_osdr_datasets().await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
     let items = if let Some(a) = json.as_array() { a.clone() }
         else if let Some(v) = json.get("items").and_then(|x| x.as_array()) { v.clone() }
         else if let Some(v) = json.get("results").and_then(|x| x.as_array()) { v.clone() }
