@@ -15,8 +15,10 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod domain;
 mod repo;
+mod services;
 use domain::*;
 use repo::*;
+use services::*;
 
 #[derive(Serialize)]
 struct Health { status: &'static str, now: DateTime<Utc> }
@@ -24,9 +26,9 @@ struct Health { status: &'static str, now: DateTime<Utc> }
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
-    iss_repo: PgRepos,
-    osdr_repo: PgRepos,
-    cache_repo: PgRepos,
+    iss_service: IssServiceImpl<PgRepos>,
+    osdr_service: OsdrServiceImpl<PgRepos>,
+    cache_service: CacheServiceImpl<PgRepos>,
     nasa_url: String,          // OSDR
     nasa_key: String,          // ключ NASA
     fallback_url: String,      // ISS where-the-iss
@@ -70,11 +72,15 @@ async fn main() -> anyhow::Result<()> {
     let osdr_repo = PgRepos::new(pool.clone());
     let cache_repo = PgRepos::new(pool.clone());
 
+    let iss_service = IssServiceImpl::new(iss_repo);
+    let osdr_service = OsdrServiceImpl::new(osdr_repo);
+    let cache_service = CacheServiceImpl::new(cache_repo);
+
     let state = AppState {
         pool: pool.clone(),
-        iss_repo,
-        osdr_repo,
-        cache_repo,
+        iss_service,
+        osdr_service,
+        cache_service,
         nasa_url: nasa_url.clone(),
         nasa_key,
         fallback_url: fallback_url.clone(),
@@ -215,7 +221,7 @@ async fn init_db(pool: &PgPool) -> anyhow::Result<()> {
 /* ---------- ISS ---------- */
 async fn last_iss(State(st): State<AppState>)
 -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    match st.iss_repo.get_latest_iss_data().await {
+    match st.iss_service.get_latest_iss_data().await {
         Ok(Some(iss_data)) => Ok(Json(serde_json::json!({
             "id": iss_data.id, "fetched_at": iss_data.fetched_at, "source_url": iss_data.source_url, "payload": iss_data.payload
         }))),
@@ -247,44 +253,20 @@ struct Trend {
 
 async fn iss_trend(State(st): State<AppState>)
 -> std::result::Result<Json<Trend>, (StatusCode, String)> {
-    let iss_data_list = st.iss_repo.get_iss_trend_data().await
+    let trend = st.iss_service.get_iss_trend_analysis().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if iss_data_list.len() < 2 {
-        return Ok(Json(Trend {
-            movement: false, delta_km: 0.0, dt_sec: 0.0, velocity_kmh: None,
-            from_time: None, to_time: None,
-            from_lat: None, from_lon: None, to_lat: None, to_lon: None
-        }));
-    }
-
-    let t2: DateTime<Utc> = iss_data_list[0].fetched_at;
-    let t1: DateTime<Utc> = iss_data_list[1].fetched_at;
-    let p2: Value = iss_data_list[0].payload.clone();
-    let p1: Value = iss_data_list[1].payload.clone();
-
-    let lat1 = num(&p1["latitude"]);
-    let lon1 = num(&p1["longitude"]);
-    let lat2 = num(&p2["latitude"]);
-    let lon2 = num(&p2["longitude"]);
-    let v2 = num(&p2["velocity"]);
-
-    let mut delta_km = 0.0;
-    let mut movement = false;
-    if let (Some(a1), Some(o1), Some(a2), Some(o2)) = (lat1, lon1, lat2, lon2) {
-        delta_km = haversine_km(a1, o1, a2, o2);
-        movement = delta_km > 0.1;
-    }
-    let dt_sec = (t2 - t1).num_milliseconds() as f64 / 1000.0;
-
     Ok(Json(Trend {
-        movement,
-        delta_km,
-        dt_sec,
-        velocity_kmh: v2,
-        from_time: Some(t1),
-        to_time: Some(t2),
-        from_lat: lat1, from_lon: lon1, to_lat: lat2, to_lon: lon2,
+        movement: trend.movement,
+        delta_km: trend.delta_km,
+        dt_sec: trend.dt_sec,
+        velocity_kmh: trend.velocity_kmh,
+        from_time: trend.from_time,
+        to_time: trend.to_time,
+        from_lat: trend.from_lat,
+        from_lon: trend.from_lon,
+        to_lat: trend.to_lat,
+        to_lon: trend.to_lon,
     }))
 }
 
@@ -407,13 +389,8 @@ async fn space_summary(State(st): State<AppState>)
 
 /* ---------- Фетчеры и запись ---------- */
 
-async fn write_cache(pool: &PgPool, source: &str, payload: Value) -> anyhow::Result<()> {
-    // Create domain model and validate
-    let space_cache = SpaceCache::new(source.to_string(), payload);
-    space_cache.validate()?;
-
-    sqlx::query("INSERT INTO space_cache(source, payload) VALUES ($1,$2)")
-        .bind(&space_cache.source).bind(&space_cache.payload).execute(pool).await?;
+async fn write_cache(st: &AppState, source: &str, payload: Value) -> anyhow::Result<()> {
+    st.cache_service.store_space_cache(source.to_string(), payload).await?;
     Ok(())
 }
 
@@ -428,7 +405,7 @@ async fn fetch_apod(st: &AppState) -> anyhow::Result<()> {
         anyhow::bail!("APOD request failed with status: {}", resp.status());
     }
     let json: Value = resp.json().await?;
-    write_cache(&st.pool, "apod", json).await
+    write_cache(st, "apod", json).await
 }
 
 // NeoWs
@@ -447,7 +424,7 @@ async fn fetch_neo_feed(st: &AppState) -> anyhow::Result<()> {
         anyhow::bail!("NEO request failed with status: {}", resp.status());
     }
     let json: Value = resp.json().await?;
-    write_cache(&st.pool, "neo", json).await
+    write_cache(st, "neo", json).await
 }
 
 // DONKI объединённая
@@ -463,7 +440,7 @@ async fn fetch_donki_flr(st: &AppState) -> anyhow::Result<()> {
     let mut req = client.get(url).query(&[("startDate",from),("endDate",to)]);
     if !st.nasa_key.is_empty() { req = req.query(&[("api_key",&st.nasa_key)]); }
     let json: Value = req.send().await?.json().await?;
-    write_cache(&st.pool, "flr", json).await
+    write_cache(st, "flr", json).await
 }
 async fn fetch_donki_cme(st: &AppState) -> anyhow::Result<()> {
     let (from,to) = last_days(5);
@@ -472,7 +449,7 @@ async fn fetch_donki_cme(st: &AppState) -> anyhow::Result<()> {
     let mut req = client.get(url).query(&[("startDate",from),("endDate",to)]);
     if !st.nasa_key.is_empty() { req = req.query(&[("api_key",&st.nasa_key)]); }
     let json: Value = req.send().await?.json().await?;
-    write_cache(&st.pool, "cme", json).await
+    write_cache(st, "cme", json).await
 }
 
 // SpaceX
@@ -480,7 +457,7 @@ async fn fetch_spacex_next(st: &AppState) -> anyhow::Result<()> {
     let url = "https://api.spacexdata.com/v4/launches/next";
     let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
     let json: Value = client.get(url).send().await?.json().await?;
-    write_cache(&st.pool, "spacex", json).await
+    write_cache(st, "spacex", json).await
 }
 
 fn last_days(n: i64) -> (String,String) {
