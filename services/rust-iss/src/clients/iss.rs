@@ -1,6 +1,8 @@
-use super::{HttpClient, HttpClientConfig, IssClient, Result as ClientResult};
+use super::{HttpClient, SpaceXClient, Result as ClientResult};
+use crate::config::HttpClientConfig;
 use async_trait::async_trait;
 use serde_json::Value;
+use crate::IssClient;
 
 /// ISS Position API Client implementation
 #[derive(Clone)]

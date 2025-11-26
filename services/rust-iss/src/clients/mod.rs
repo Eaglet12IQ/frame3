@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
+use crate::config::HttpClientConfig;
 
 /// Common client error type
 #[derive(Debug, Clone)]
@@ -26,26 +27,6 @@ impl std::fmt::Display for ClientError {
 impl std::error::Error for ClientError {}
 
 pub type Result<T> = std::result::Result<T, ClientError>;
-
-/// HTTP Client configuration
-#[derive(Debug, Clone)]
-pub struct HttpClientConfig {
-    pub timeout: Duration,
-    pub max_retries: u32,
-    pub retry_delay: Duration,
-    pub user_agent: String,
-}
-
-impl Default for HttpClientConfig {
-    fn default() -> Self {
-        Self {
-            timeout: Duration::from_secs(30),
-            max_retries: 3,
-            retry_delay: Duration::from_millis(1000),
-            user_agent: "Rust-ISS-Service/1.0".to_string(),
-        }
-    }
-}
 
 /// Base HTTP client with common functionality
 #[derive(Clone)]
