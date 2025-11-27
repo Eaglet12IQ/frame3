@@ -3,15 +3,14 @@ use std::{collections::HashMap, default::Default, time::Duration};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
-    Json, Router,
+    Json,
 };
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use serde::Serialize;
+use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
+use tower_http::trace::TraceLayer;
 
 mod domain;
 mod repo;
@@ -19,14 +18,12 @@ mod services;
 mod clients;
 mod config;
 mod handlers;
+mod routes;
 use domain::*;
 use repo::*;
 use services::*;
 use clients::{NasaClient, NasaClientImpl, IssClient, IssClientImpl, SpaceXClient, SpaceXClientImpl};
 use config::*;
-
-#[derive(Serialize)]
-struct Health { status: &'static str, now: DateTime<Utc> }
 
 #[derive(Clone)]
 struct AppState {
@@ -141,21 +138,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let app = Router::new()
-        // общее
-        .route("/health", get(|| async { Json(Health { status: "ok", now: Utc::now() }) }))
-        .with_state(state.clone())
-        // ISS
-        .route("/last", get(handlers::last_iss))
-        .route("/fetch", get(handlers::trigger_iss))
-        .route("/iss/trend", get(handlers::iss_trend))
-        // OSDR
-        .route("/osdr/sync", get(handlers::osdr_sync))
-        .route("/osdr/list", get(handlers::osdr_list))
-        // Space cache
-        .route("/space/:src/latest", get(handlers::space_latest))
-        .route("/space/refresh", get(handlers::space_refresh))
-        .route("/space/summary", get(handlers::space_summary))
+    let app = routes::create_routes()
+        .layer(TraceLayer::new_for_http())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", 3000)).await?;
