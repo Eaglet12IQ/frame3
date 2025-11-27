@@ -18,6 +18,7 @@ mod repo;
 mod services;
 mod clients;
 mod config;
+mod handlers;
 use domain::*;
 use repo::*;
 use services::*;
@@ -84,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_and_store_osdr(&st).await { error!("osdr err {e:?}") }
+                if let Err(e) = handlers::fetch_and_store_osdr(&st).await { error!("osdr err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.config.osdr.fetch_interval)).await;
             }
         });
@@ -94,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_and_store_iss(&st).await { error!("iss err {e:?}") }
+                if let Err(e) = handlers::fetch_and_store_iss(&st).await { error!("iss err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.config.iss.fetch_interval)).await;
             }
         });
@@ -104,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_apod(&st).await { error!("apod err {e:?}") }
+                if let Err(e) = handlers::fetch_apod(&st).await { error!("apod err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.config.nasa.fetch_intervals.apod)).await;
             }
         });
@@ -114,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_neo_feed(&st).await { error!("neo err {e:?}") }
+                if let Err(e) = handlers::fetch_neo_feed(&st).await { error!("neo err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.config.nasa.fetch_intervals.neo)).await;
             }
         });
@@ -124,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_donki(&st).await { error!("donki err {e:?}") }
+                if let Err(e) = handlers::fetch_donki(&st).await { error!("donki err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.config.nasa.fetch_intervals.donki)).await;
             }
         });
@@ -134,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
         let st = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = fetch_spacex_next(&st).await { error!("spacex err {e:?}") }
+                if let Err(e) = handlers::fetch_spacex_next(&st).await { error!("spacex err {e:?}") }
                 tokio::time::sleep(Duration::from_secs(st.config.spacex.fetch_interval)).await;
             }
         });
@@ -145,16 +146,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { Json(Health { status: "ok", now: Utc::now() }) }))
         .with_state(state.clone())
         // ISS
-        .route("/last", get(last_iss))
-        .route("/fetch", get(trigger_iss))
-        .route("/iss/trend", get(iss_trend))
+        .route("/last", get(handlers::last_iss))
+        .route("/fetch", get(handlers::trigger_iss))
+        .route("/iss/trend", get(handlers::iss_trend))
         // OSDR
-        .route("/osdr/sync", get(osdr_sync))
-        .route("/osdr/list", get(osdr_list))
+        .route("/osdr/sync", get(handlers::osdr_sync))
+        .route("/osdr/list", get(handlers::osdr_list))
         // Space cache
-        .route("/space/:src/latest", get(space_latest))
-        .route("/space/refresh", get(space_refresh))
-        .route("/space/summary", get(space_summary))
+        .route("/space/:src/latest", get(handlers::space_latest))
+        .route("/space/refresh", get(handlers::space_refresh))
+        .route("/space/summary", get(handlers::space_summary))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", 3000)).await?;
@@ -210,294 +211,10 @@ async fn init_db(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/* ---------- ISS ---------- */
-async fn last_iss(State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    match st.iss_service.get_latest_iss_data().await {
-        Ok(Some(iss_data)) => Ok(Json(serde_json::json!({
-            "id": iss_data.id, "fetched_at": iss_data.fetched_at, "source_url": iss_data.source_url, "payload": iss_data.payload
-        }))),
-        Ok(None) => Ok(Json(serde_json::json!({"message":"no data"}))),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
-    }
-}
 
-async fn trigger_iss(State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    fetch_and_store_iss(&st).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    last_iss(State(st)).await
-}
 
-#[derive(Serialize)]
-struct Trend {
-    movement: bool,
-    delta_km: f64,
-    dt_sec: f64,
-    velocity_kmh: Option<f64>,
-    from_time: Option<DateTime<Utc>>,
-    to_time: Option<DateTime<Utc>>,
-    from_lat: Option<f64>,
-    from_lon: Option<f64>,
-    to_lat: Option<f64>,
-    to_lon: Option<f64>,
-}
 
-async fn iss_trend(State(st): State<AppState>)
--> std::result::Result<Json<Trend>, (StatusCode, String)> {
-    let trend = st.iss_service.get_iss_trend_analysis().await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(Trend {
-        movement: trend.movement,
-        delta_km: trend.delta_km,
-        dt_sec: trend.dt_sec,
-        velocity_kmh: trend.velocity_kmh,
-        from_time: trend.from_time,
-        to_time: trend.to_time,
-        from_lat: trend.from_lat,
-        from_lon: trend.from_lon,
-        to_lat: trend.to_lat,
-        to_lon: trend.to_lon,
-    }))
-}
 
-fn num(v: &Value) -> Option<f64> {
-    if let Some(x) = v.as_f64() { return Some(x); }
-    if let Some(s) = v.as_str() { return s.parse::<f64>().ok(); }
-    None
-}
 
-fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let rlat1 = lat1.to_radians();
-    let rlat2 = lat2.to_radians();
-    let dlat = (lat2 - lat1).to_radians();
-    let dlon = (lon2 - lon1).to_radians();
-    let a = (dlat / 2.0).sin().powi(2) + rlat1.cos() * rlat2.cos() * (dlon / 2.0).sin().powi(2);
-    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-    6371.0 * c
-}
 
-/* ---------- OSDR ---------- */
-async fn osdr_sync(State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let written = fetch_and_store_osdr(&st).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(serde_json::json!({ "written": written })))
-}
-
-async fn osdr_list(State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let limit =  std::env::var("OSDR_LIST_LIMIT").ok()
-        .and_then(|s| s.parse::<i64>().ok()).unwrap_or(20);
-
-    let rows = sqlx::query(
-        "SELECT id, dataset_id, title, status, updated_at, inserted_at, raw
-         FROM osdr_items
-         ORDER BY inserted_at DESC
-         LIMIT $1"
-    ).bind(limit).fetch_all(&st.pool).await
-     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let out: Vec<Value> = rows.into_iter().map(|r| {
-        serde_json::json!({
-            "id": r.get::<i64,_>("id"),
-            "dataset_id": r.get::<Option<String>,_>("dataset_id"),
-            "title": r.get::<Option<String>,_>("title"),
-            "status": r.get::<Option<String>,_>("status"),
-            "updated_at": r.get::<Option<DateTime<Utc>>,_>("updated_at"),
-            "inserted_at": r.get::<DateTime<Utc>, _>("inserted_at"),
-            "raw": r.get::<Value,_>("raw"),
-        })
-    }).collect();
-
-    Ok(Json(serde_json::json!({ "items": out })))
-}
-
-/* ---------- Универсальная витрина space_cache ---------- */
-
-async fn space_latest(Path(src): Path<String>, State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let row = sqlx::query(
-        "SELECT fetched_at, payload FROM space_cache
-         WHERE source = $1 ORDER BY id DESC LIMIT 1"
-    ).bind(&src).fetch_optional(&st.pool).await
-     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if let Some(r) = row {
-        let fetched_at: DateTime<Utc> = r.get("fetched_at");
-        let payload: Value = r.get("payload");
-        return Ok(Json(serde_json::json!({ "source": src, "fetched_at": fetched_at, "payload": payload })));
-    }
-    Ok(Json(serde_json::json!({ "source": src, "message":"no data" })))
-}
-
-async fn space_refresh(Query(q): Query<HashMap<String,String>>, State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let list = q.get("src").cloned().unwrap_or_else(|| "apod,neo,flr,cme,spacex".to_string());
-    let mut done = Vec::new();
-    for s in list.split(',').map(|x| x.trim().to_lowercase()) {
-        match s.as_str() {
-            "apod"   => { let _ = fetch_apod(&st).await;       done.push("apod"); }
-            "neo"    => { let _ = fetch_neo_feed(&st).await;   done.push("neo"); }
-            "flr"    => { let _ = fetch_donki_flr(&st).await;  done.push("flr"); }
-            "cme"    => { let _ = fetch_donki_cme(&st).await;  done.push("cme"); }
-            "spacex" => { let _ = fetch_spacex_next(&st).await; done.push("spacex"); }
-            _ => {}
-        }
-    }
-    Ok(Json(serde_json::json!({ "refreshed": done })))
-}
-
-async fn latest_from_cache(pool: &PgPool, src: &str) -> Value {
-    sqlx::query("SELECT fetched_at, payload FROM space_cache WHERE source=$1 ORDER BY id DESC LIMIT 1")
-        .bind(src)
-        .fetch_optional(pool).await.ok().flatten()
-        .map(|r| serde_json::json!({"at": r.get::<DateTime<Utc>,_>("fetched_at"), "payload": r.get::<Value,_>("payload")}))
-        .unwrap_or(serde_json::json!({}))
-}
-
-async fn space_summary(State(st): State<AppState>)
--> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let apod   = latest_from_cache(&st.pool, "apod").await;
-    let neo    = latest_from_cache(&st.pool, "neo").await;
-    let flr    = latest_from_cache(&st.pool, "flr").await;
-    let cme    = latest_from_cache(&st.pool, "cme").await;
-    let spacex = latest_from_cache(&st.pool, "spacex").await;
-
-    let iss_last = sqlx::query("SELECT fetched_at,payload FROM iss_fetch_log ORDER BY id DESC LIMIT 1")
-        .fetch_optional(&st.pool).await.ok().flatten()
-        .map(|r| serde_json::json!({"at": r.get::<DateTime<Utc>,_>("fetched_at"), "payload": r.get::<Value,_>("payload")}))
-        .unwrap_or(serde_json::json!({}));
-
-    let osdr_count: i64 = sqlx::query("SELECT count(*) AS c FROM osdr_items")
-        .fetch_one(&st.pool).await.map(|r| r.get::<i64,_>("c")).unwrap_or(0);
-
-    Ok(Json(serde_json::json!({
-        "apod": apod, "neo": neo, "flr": flr, "cme": cme, "spacex": spacex,
-        "iss": iss_last, "osdr_count": osdr_count
-    })))
-}
-
-/* ---------- Фетчеры и запись ---------- */
-
-async fn write_cache(st: &AppState, source: &str, payload: Value) -> anyhow::Result<()> {
-    st.cache_service.store_space_cache(source.to_string(), payload).await?;
-    Ok(())
-}
-
-// APOD
-async fn fetch_apod(st: &AppState) -> anyhow::Result<()> {
-    let json = st.nasa_client.fetch_apod(st.config.nasa.api_key.as_deref()).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
-    write_cache(st, "apod", json).await
-}
-
-// NeoWs
-async fn fetch_neo_feed(st: &AppState) -> anyhow::Result<()> {
-    let today = Utc::now().date_naive();
-    let start = today - chrono::Days::new(2);
-    let json = st.nasa_client.fetch_neo_feed(&start.to_string(), &today.to_string(), st.config.nasa.api_key.as_deref()).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
-    write_cache(st, "neo", json).await
-}
-
-// DONKI объединённая
-async fn fetch_donki(st: &AppState) -> anyhow::Result<()> {
-    let _ = fetch_donki_flr(st).await;
-    let _ = fetch_donki_cme(st).await;
-    Ok(())
-}
-async fn fetch_donki_flr(st: &AppState) -> anyhow::Result<()> {
-    let (from,to) = last_days(5);
-    let json = st.nasa_client.fetch_donki_flr(&from, &to, st.config.nasa.api_key.as_deref()).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
-    write_cache(st, "flr", json).await
-}
-async fn fetch_donki_cme(st: &AppState) -> anyhow::Result<()> {
-    let (from,to) = last_days(5);
-    let json = st.nasa_client.fetch_donki_cme(&from, &to, st.config.nasa.api_key.as_deref()).await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
-    write_cache(st, "cme", json).await
-}
-
-// SpaceX
-async fn fetch_spacex_next(st: &AppState) -> anyhow::Result<()> {
-    let json = st.spacex_client.fetch_next_launch().await.map_err(|e| anyhow::anyhow!("SpaceX client error: {}", e))?;
-    write_cache(st, "spacex", json).await
-}
-
-fn last_days(n: i64) -> (String,String) {
-    let to = Utc::now().date_naive();
-    let from = to - chrono::Days::new(n as u64);
-    (from.to_string(), to.to_string())
-}
-
-/* ---------- Вспомогательное ---------- */
-fn s_pick(v: &Value, keys: &[&str]) -> Option<String> {
-    for k in keys {
-        if let Some(x) = v.get(*k) {
-            if let Some(s) = x.as_str() { if !s.is_empty() { return Some(s.to_string()); } }
-            else if x.is_number() { return Some(x.to_string()); }
-        }
-    }
-    None
-}
-fn t_pick(v: &Value, keys: &[&str]) -> Option<DateTime<Utc>> {
-    for k in keys {
-        if let Some(x) = v.get(*k) {
-            if let Some(s) = x.as_str() {
-                if let Ok(dt) = s.parse::<DateTime<Utc>>() { return Some(dt); }
-                if let Ok(ndt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-                    return Some(Utc.from_utc_datetime(&ndt));
-                }
-            } else if let Some(n) = x.as_i64() {
-                return Some(Utc.timestamp_opt(n, 0).single().unwrap_or_else(Utc::now));
-            }
-        }
-    }
-    None
-}
-async fn fetch_and_store_iss(st: &AppState) -> anyhow::Result<()> {
-    let json = st.iss_client.fetch_iss_position().await.map_err(|e| anyhow::anyhow!("ISS client error: {}", e))?;
-
-    // Create domain model and validate
-    let iss_data = IssData::new(st.config.iss.api_url.clone(), json);
-    iss_data.validate()?;
-
-    sqlx::query("INSERT INTO iss_fetch_log (source_url, payload) VALUES ($1, $2)")
-        .bind(&iss_data.source_url).bind(&iss_data.payload).execute(&st.pool).await?;
-    Ok(())
-}
-async fn fetch_and_store_osdr(st: &AppState) -> anyhow::Result<usize> {
-    let json = st.nasa_client.fetch_osdr_datasets().await.map_err(|e| anyhow::anyhow!("NASA client error: {}", e))?;
-    let items = if let Some(a) = json.as_array() { a.clone() }
-        else if let Some(v) = json.get("items").and_then(|x| x.as_array()) { v.clone() }
-        else if let Some(v) = json.get("results").and_then(|x| x.as_array()) { v.clone() }
-        else { vec![json.clone()] };
-
-    let mut written = 0usize;
-    for item in items {
-        let id = s_pick(&item, &["dataset_id","id","uuid","studyId","accession","osdr_id"]);
-        let title = s_pick(&item, &["title","name","label"]);
-        let status = s_pick(&item, &["status","state","lifecycle"]);
-        let updated = t_pick(&item, &["updated","updated_at","modified","lastUpdated","timestamp"]);
-
-        // Create domain model and validate
-        let osdr_item = OsdrItem::with_fields(id, title, status, updated, item);
-        osdr_item.validate()?;
-
-        if let Some(ds) = osdr_item.dataset_id.clone() {
-            sqlx::query(
-                "INSERT INTO osdr_items(dataset_id, title, status, updated_at, raw)
-                 VALUES($1,$2,$3,$4,$5)
-                 ON CONFLICT (dataset_id) DO UPDATE
-                 SET title=EXCLUDED.title, status=EXCLUDED.status,
-                     updated_at=EXCLUDED.updated_at, raw=EXCLUDED.raw"
-            ).bind(ds).bind(osdr_item.title).bind(osdr_item.status).bind(osdr_item.updated_at).bind(osdr_item.raw).execute(&st.pool).await?;
-        } else {
-            sqlx::query(
-                "INSERT INTO osdr_items(dataset_id, title, status, updated_at, raw)
-                 VALUES($1,$2,$3,$4,$5)"
-            ).bind::<Option<String>>(None).bind(osdr_item.title).bind(osdr_item.status).bind(osdr_item.updated_at).bind(osdr_item.raw).execute(&st.pool).await?;
-        }
-        written += 1;
-    }
-    Ok(written)
-}

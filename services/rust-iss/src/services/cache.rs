@@ -239,7 +239,7 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
 
 impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
     /// Fetch DONKI FLR data
-    async fn fetch_donki_flr(&self, api_key: Option<&str>) -> Result<SpaceCache> {
+    pub async fn fetch_donki_flr(&self, api_key: Option<&str>) -> Result<SpaceCache> {
         let (from, to) = get_last_days_range(5);
         let url = "https://api.nasa.gov/DONKI/FLR";
         let client = create_http_client()?;
@@ -271,7 +271,7 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
     }
 
     /// Fetch DONKI CME data
-    async fn fetch_donki_cme(&self, api_key: Option<&str>) -> Result<SpaceCache> {
+    pub async fn fetch_donki_cme(&self, api_key: Option<&str>) -> Result<SpaceCache> {
         let (from, to) = get_last_days_range(5);
         let url = "https://api.nasa.gov/DONKI/CME";
         let client = create_http_client()?;

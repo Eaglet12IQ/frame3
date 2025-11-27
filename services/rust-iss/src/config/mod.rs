@@ -61,6 +61,7 @@ pub struct ServerConfig {
 
 #[derive(Debug, Clone)]
 pub struct OsdrConfig {
+    pub api_url: String,
     pub fetch_interval: u64,
     pub list_limit: i64,
 }
@@ -233,16 +234,21 @@ impl ServerConfig {
 
 impl OsdrConfig {
     fn from_env() -> Result<Self, ConfigError> {
+        let api_url = env::var("OSDR_API_URL")
+            .unwrap_or_else(|_| "https://visualization.osdr.nasa.gov/biodata/api/v2/datasets/?format=json".to_string());
         let fetch_interval = env_u64("FETCH_EVERY_SECONDS", 600)?;
         let list_limit = env::var("OSDR_LIST_LIMIT")
             .unwrap_or_else(|_| "20".to_string())
             .parse::<i64>()
             .map_err(|_| ConfigError::InvalidValue("OSDR_LIST_LIMIT must be a valid i64".to_string()))?;
 
-        Ok(Self { fetch_interval, list_limit })
+        Ok(Self { api_url, fetch_interval, list_limit })
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
+        if self.api_url.is_empty() {
+            return Err(ConfigError::InvalidValue("OSDR_API_URL cannot be empty".to_string()));
+        }
         if self.list_limit <= 0 {
             return Err(ConfigError::InvalidValue("OSDR_LIST_LIMIT must be greater than 0".to_string()));
         }
