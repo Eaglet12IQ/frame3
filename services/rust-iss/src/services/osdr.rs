@@ -152,6 +152,7 @@ mod tests {
     use crate::repo::RepoError;
 
     // Mock repository for testing
+    #[derive(Clone)]
     struct MockOsdrRepo;
 
     #[async_trait]

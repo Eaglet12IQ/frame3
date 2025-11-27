@@ -146,3 +146,41 @@ pub async fn fetch_spacex_next(st: &AppState) -> Result<(), Box<dyn std::error::
     st.cache_service.fetch_and_cache_spacex_next().await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn test_api_error_creation() {
+        let error = ApiError::new(StatusCode::BAD_REQUEST, "Test error");
+        assert_eq!(error.status, 400);
+        assert_eq!(error.message, "Test error");
+        assert!(error.trace_id.is_none());
+    }
+
+    #[test]
+    fn test_api_error_with_trace_id() {
+        let error = ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Server error")
+            .with_trace_id("trace-123");
+        assert_eq!(error.status, 500);
+        assert_eq!(error.message, "Server error");
+        assert_eq!(error.trace_id, Some("trace-123".to_string()));
+    }
+
+    #[test]
+    fn test_api_error_convenience_methods() {
+        let not_found = ApiError::not_found("Not found");
+        assert_eq!(not_found.status, 404);
+        assert_eq!(not_found.message, "Not found");
+
+        let bad_request = ApiError::bad_request("Bad request");
+        assert_eq!(bad_request.status, 400);
+        assert_eq!(bad_request.message, "Bad request");
+
+        let unavailable = ApiError::service_unavailable("Service unavailable");
+        assert_eq!(unavailable.status, 503);
+        assert_eq!(unavailable.message, "Service unavailable");
+    }
+}

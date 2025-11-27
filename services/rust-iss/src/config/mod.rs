@@ -281,3 +281,90 @@ fn env_u64(key: &str, default: u64) -> Result<u64, ConfigError> {
         .parse::<u64>()
         .map_err(|_| ConfigError::InvalidValue(format!("{} must be a valid u64", key)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_env_u64_with_valid_value() {
+        env::set_var("TEST_U64", "42");
+        let result = env_u64("TEST_U64", 10);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+        env::remove_var("TEST_U64");
+    }
+
+    #[test]
+    fn test_env_u64_with_default() {
+        env::remove_var("TEST_U64_DEFAULT");
+        let result = env_u64("TEST_U64_DEFAULT", 99);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 99);
+    }
+
+    #[test]
+    fn test_env_u64_with_invalid_value() {
+        env::set_var("TEST_U64_INVALID", "not_a_number");
+        let result = env_u64("TEST_U64_INVALID", 10);
+        assert!(result.is_err());
+        env::remove_var("TEST_U64_INVALID");
+    }
+
+    #[test]
+    fn test_database_config_from_env() {
+        env::set_var("DATABASE_URL", "postgres://user:pass@localhost/db");
+        env::set_var("DATABASE_MAX_CONNECTIONS", "10");
+        let config = DatabaseConfig::from_env();
+        assert!(config.is_ok());
+        let db_config = config.unwrap();
+        assert_eq!(db_config.url, "postgres://user:pass@localhost/db");
+        assert_eq!(db_config.max_connections, 10);
+        env::remove_var("DATABASE_URL");
+        env::remove_var("DATABASE_MAX_CONNECTIONS");
+    }
+
+    #[test]
+    fn test_database_config_validate() {
+        let valid_config = DatabaseConfig {
+            url: "postgres://test".to_string(),
+            max_connections: 5,
+        };
+        assert!(valid_config.validate().is_ok());
+
+        let invalid_config = DatabaseConfig {
+            url: "".to_string(),
+            max_connections: 5,
+        };
+        assert!(invalid_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_server_config_from_env() {
+        env::set_var("SERVER_HOST", "127.0.0.1");
+        env::set_var("SERVER_PORT", "8080");
+        let config = ServerConfig::from_env();
+        assert!(config.is_ok());
+        let server_config = config.unwrap();
+        assert_eq!(server_config.host, "127.0.0.1");
+        assert_eq!(server_config.port, 8080);
+        env::remove_var("SERVER_HOST");
+        env::remove_var("SERVER_PORT");
+    }
+
+    #[test]
+    fn test_server_config_validate() {
+        let valid_config = ServerConfig {
+            host: "localhost".to_string(),
+            port: 3000,
+        };
+        assert!(valid_config.validate().is_ok());
+
+        let invalid_config = ServerConfig {
+            host: "".to_string(),
+            port: 3000,
+        };
+        assert!(invalid_config.validate().is_err());
+    }
+}

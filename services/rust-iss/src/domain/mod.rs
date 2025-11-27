@@ -238,11 +238,11 @@ mod tests {
             "longitude": -0.1278,
             "velocity": 27500.0
         });
-        let iss_data = IssData::new("https://api.example.com/iss".to_string(), valid_payload);
+        let iss_data = IssData::new("https://api.example.com/iss".to_string(), valid_payload.clone());
         assert!(iss_data.validate().is_ok());
 
         // Test invalid source URL
-        let invalid_iss = IssData::new("".to_string(), valid_payload);
+        let invalid_iss = IssData::new("".to_string(), valid_payload.clone());
         assert!(invalid_iss.validate().is_err());
 
         // Test invalid payload

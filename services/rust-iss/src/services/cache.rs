@@ -324,6 +324,7 @@ mod tests {
     use crate::repo::RepoError;
 
     // Mock repository for testing
+    #[derive(Clone)]
     struct MockCacheRepo;
 
     #[async_trait]
