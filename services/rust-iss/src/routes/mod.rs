@@ -1,9 +1,15 @@
 use axum::{
+    http::{HeaderMap, Request},
     routing::get,
+    middleware::{self, Next},
+    response::Response,
     Router,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer};
+use tracing::info;
+use uuid::Uuid;
 
 use crate::handlers;
 use crate::AppState;
@@ -47,4 +53,6 @@ pub fn create_routes() -> Router<AppState> {
         .merge(iss_routes())
         .merge(osdr_routes())
         .merge(cache_routes())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+        .layer(PropagateRequestIdLayer::x_request_id())
 }

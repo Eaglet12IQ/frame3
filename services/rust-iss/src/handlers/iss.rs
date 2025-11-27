@@ -5,8 +5,9 @@ use axum::{
 use chrono::DateTime;
 use serde::Serialize;
 use serde_json::Value;
+use tracing::{error, info, instrument};
 
-use crate::{AppState, domain::IssData, services::IssService};
+use crate::{AppState, domain::IssData, services::IssService, handlers::ApiError};
 
 #[derive(Serialize)]
 pub struct IssResponse {
@@ -30,29 +31,49 @@ pub struct Trend {
     pub to_lon: Option<f64>,
 }
 
-pub async fn last_iss(State(st): State<AppState>)
--> Result<Json<Value>, (axum::http::StatusCode, String)> {
+#[instrument(skip(st))]
+pub async fn last_iss(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
+    info!("Retrieving latest ISS data");
     match st.iss_service.get_latest_iss_data().await {
-        Ok(Some(iss_data)) => Ok(Json(serde_json::json!({
-            "id": iss_data.id, "fetched_at": iss_data.fetched_at, "source_url": iss_data.source_url, "payload": iss_data.payload
-        }))),
-        Ok(None) => Ok(Json(serde_json::json!({"message":"no data"}))),
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+        Ok(Some(iss_data)) => {
+            info!("Found ISS data with id: {}", iss_data.id.unwrap_or(0));
+            Ok(Json(serde_json::json!({
+                "id": iss_data.id, "fetched_at": iss_data.fetched_at, "source_url": iss_data.source_url, "payload": iss_data.payload
+            })))
+        }
+        Ok(None) => {
+            info!("No ISS data found");
+            Ok(Json(serde_json::json!({"message":"no data"})))
+        }
+        Err(e) => {
+            error!("Failed to retrieve ISS data: {:?}", e);
+            Err(ApiError::internal_error("Failed to retrieve ISS data"))
+        }
     }
 }
 
-pub async fn trigger_iss(State(st): State<AppState>)
--> Result<Json<Value>, (axum::http::StatusCode, String)> {
+#[instrument(skip(st))]
+pub async fn trigger_iss(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
+    info!("Triggering ISS data fetch");
     super::fetch_and_store_iss(&st).await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            error!("Failed to fetch and store ISS data: {:?}", e);
+            ApiError::internal_error("Failed to fetch ISS data")
+        })?;
+    info!("ISS data fetch completed, retrieving latest data");
     last_iss(State(st)).await
 }
 
-pub async fn iss_trend(State(st): State<AppState>)
--> Result<Json<Trend>, (axum::http::StatusCode, String)> {
+#[instrument(skip(st))]
+pub async fn iss_trend(State(st): State<AppState>) -> Result<Json<Trend>, ApiError> {
+    info!("Calculating ISS trend analysis");
     let trend = st.iss_service.get_iss_trend_analysis().await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            error!("Failed to get ISS trend analysis: {:?}", e);
+            ApiError::internal_error("Failed to calculate ISS trend")
+        })?;
 
+    info!("ISS trend calculated: movement={}, delta_km={}", trend.movement, trend.delta_km);
     Ok(Json(Trend {
         movement: trend.movement,
         delta_km: trend.delta_km,

@@ -5,28 +5,34 @@ use axum::{
 use chrono::DateTime;
 use serde_json::Value;
 use sqlx::Row;
+use tracing::{error, info, instrument};
 
-use crate::AppState;
+use crate::{AppState, handlers::ApiError};
 
-pub async fn osdr_sync(State(st): State<AppState>)
--> Result<Json<Value>, (axum::http::StatusCode, String)> {
-    let written = super::fetch_and_store_osdr(&st).await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(serde_json::json!({ "written": written })))
+#[instrument(skip(st))]
+pub async fn osdr_sync(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
+    info!("Starting OSDR data synchronization");
+    super::fetch_and_store_osdr(&st).await
+        .map_err(|e| {
+            error!("Failed to sync OSDR data: {:?}", e);
+            ApiError::internal_error("Failed to sync OSDR data")
+        })?;
+    info!("OSDR sync completed");
+    Ok(Json(serde_json::json!({ "message": "OSDR sync completed" })))
 }
 
-pub async fn osdr_list(State(st): State<AppState>)
--> Result<Json<Value>, (axum::http::StatusCode, String)> {
+#[instrument(skip(st))]
+pub async fn osdr_list(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
     let limit =  std::env::var("OSDR_LIST_LIMIT").ok()
         .and_then(|s| s.parse::<i64>().ok()).unwrap_or(20);
 
+    info!("Retrieving OSDR items list with limit: {}", limit);
     let rows = sqlx::query(
         "SELECT id, dataset_id, title, status, updated_at, inserted_at, raw
          FROM osdr_items
          ORDER BY inserted_at DESC
          LIMIT $1"
-    ).bind(limit).fetch_all(&st.pool).await
-     .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    ).bind(limit).fetch_all(&st.pool).await?;
 
     let out: Vec<Value> = rows.into_iter().map(|r| {
         serde_json::json!({
@@ -40,5 +46,6 @@ pub async fn osdr_list(State(st): State<AppState>)
         })
     }).collect();
 
+    info!("Retrieved {} OSDR items", out.len());
     Ok(Json(serde_json::json!({ "items": out })))
 }
