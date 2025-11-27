@@ -8,7 +8,9 @@ use axum::{
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
-use tracing::{error, info};
+use tokio::signal;
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, warn};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tower_http::trace::TraceLayer;
 
@@ -19,6 +21,7 @@ mod clients;
 mod config;
 mod handlers;
 mod routes;
+
 use domain::*;
 use repo::*;
 use services::*;
@@ -49,23 +52,29 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env().map_err(|e| anyhow::anyhow!("Configuration error: {}", e))?;
     config.validate().map_err(|e| anyhow::anyhow!("Configuration validation error: {}", e))?;
 
-    let pool = PgPoolOptions::new().max_connections(config.database.max_connections).connect(&config.database.url).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(config.database.max_connections)
+        .connect(&config.database.url)
+        .await?;
     init_db(&pool).await?;
 
+    // Initialize repositories
     let iss_repo = PgRepos::new(pool.clone());
     let osdr_repo = PgRepos::new(pool.clone());
     let cache_repo = PgRepos::new(pool.clone());
 
+    // Initialize services with dependency injection
     let iss_service = IssServiceImpl::new(iss_repo);
     let osdr_service = OsdrServiceImpl::new(osdr_repo);
     let cache_service = CacheServiceImpl::new(cache_repo);
 
+    // Initialize HTTP clients
     let http_config = HttpClientConfig::default();
-
     let nasa_client = NasaClientImpl::new(http_config.clone());
     let iss_client = IssClientImpl::new(http_config.clone());
     let spacex_client = SpaceXClientImpl::new(http_config.clone());
 
+    // Create application state
     let state = AppState {
         pool: pool.clone(),
         iss_service,
@@ -77,75 +86,200 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
     };
 
-    // фон OSDR
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = handlers::fetch_and_store_osdr(&st).await { error!("osdr err {e:?}") }
-                tokio::time::sleep(Duration::from_secs(st.config.osdr.fetch_interval)).await;
-            }
-        });
-    }
-    // фон ISS
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = handlers::fetch_and_store_iss(&st).await { error!("iss err {e:?}") }
-                tokio::time::sleep(Duration::from_secs(st.config.iss.fetch_interval)).await;
-            }
-        });
-    }
-    // фон APOD
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = handlers::fetch_apod(&st).await { error!("apod err {e:?}") }
-                tokio::time::sleep(Duration::from_secs(st.config.nasa.fetch_intervals.apod)).await;
-            }
-        });
-    }
-    // фон NeoWs
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = handlers::fetch_neo_feed(&st).await { error!("neo err {e:?}") }
-                tokio::time::sleep(Duration::from_secs(st.config.nasa.fetch_intervals.neo)).await;
-            }
-        });
-    }
-    // фон DONKI
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = handlers::fetch_donki(&st).await { error!("donki err {e:?}") }
-                tokio::time::sleep(Duration::from_secs(st.config.nasa.fetch_intervals.donki)).await;
-            }
-        });
-    }
-    // фон SpaceX
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = handlers::fetch_spacex_next(&st).await { error!("spacex err {e:?}") }
-                tokio::time::sleep(Duration::from_secs(st.config.spacex.fetch_interval)).await;
-            }
-        });
-    }
+    // Create cancellation token for graceful shutdown
+    let shutdown_token = CancellationToken::new();
 
+    // Spawn background tasks with cancellation support
+    spawn_background_tasks(state.clone(), shutdown_token.clone());
+
+    // Create Axum app
     let app = routes::create_routes()
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", 3000)).await?;
-    info!("rust_iss listening on 0.0.0.0:3000");
-    axum::serve(listener, app.into_make_service()).await?;
+    // Bind server
+    let addr = format!("{}:{}", config.server.host, config.server.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    info!("rust_iss listening on {}", addr);
+
+    // Create server with graceful shutdown
+    let server = axum::serve(listener, app.into_make_service());
+
+    // Handle shutdown signals
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                error!("Server error: {}", e);
+            }
+        }
+        _ = shutdown_signal() => {
+            info!("Shutdown signal received, initiating graceful shutdown...");
+            shutdown_token.cancel();
+        }
+    }
+
+    info!("Application shutdown complete");
     Ok(())
+}
+
+/// Spawn all background tasks with cancellation support
+fn spawn_background_tasks(state: AppState, shutdown_token: CancellationToken) {
+    // OSDR background task
+    {
+        let st = state.clone();
+        let token = shutdown_token.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(st.config.osdr.fetch_interval));
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = handlers::fetch_and_store_osdr(&st).await {
+                            error!("OSDR fetch error: {:?}", e);
+                        }
+                    }
+                    _ = token.cancelled() => {
+                        info!("OSDR background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // ISS background task
+    {
+        let st = state.clone();
+        let token = shutdown_token.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(st.config.iss.fetch_interval));
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = handlers::fetch_and_store_iss(&st).await {
+                            error!("ISS fetch error: {:?}", e);
+                        }
+                    }
+                    _ = token.cancelled() => {
+                        info!("ISS background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // APOD background task
+    {
+        let st = state.clone();
+        let token = shutdown_token.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(st.config.nasa.fetch_intervals.apod));
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = handlers::fetch_apod(&st).await {
+                            error!("APOD fetch error: {:?}", e);
+                        }
+                    }
+                    _ = token.cancelled() => {
+                        info!("APOD background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // NeoWs background task
+    {
+        let st = state.clone();
+        let token = shutdown_token.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(st.config.nasa.fetch_intervals.neo));
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = handlers::fetch_neo_feed(&st).await {
+                            error!("NeoWs fetch error: {:?}", e);
+                        }
+                    }
+                    _ = token.cancelled() => {
+                        info!("NeoWs background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // DONKI background task
+    {
+        let st = state.clone();
+        let token = shutdown_token.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(st.config.nasa.fetch_intervals.donki));
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = handlers::fetch_donki(&st).await {
+                            error!("DONKI fetch error: {:?}", e);
+                        }
+                    }
+                    _ = token.cancelled() => {
+                        info!("DONKI background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // SpaceX background task
+    {
+        let st = state.clone();
+        let token = shutdown_token.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(st.config.spacex.fetch_interval));
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = handlers::fetch_spacex_next(&st).await {
+                            error!("SpaceX fetch error: {:?}", e);
+                        }
+                    }
+                    _ = token.cancelled() => {
+                        info!("SpaceX background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Listen for shutdown signals (SIGTERM, SIGINT)
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
 
 fn env_u64(k: &str, d: u64) -> u64 {
@@ -194,11 +328,3 @@ async fn init_db(pool: &PgPool) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-
-
-
-
-
-
-
