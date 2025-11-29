@@ -18,7 +18,7 @@ class IssController extends Controller
     {
         $b     = $this->base();
         $last  = $this->getJson($b.'/last');
-        $trend = []; // фронт сам заберёт /api/iss/trend (через nginx прокси)
+        $trend = $this->getJson($b.'/iss/trend', ['limit' => 240]);
 
         return view('iss', [
             'last' => $last,

@@ -3,7 +3,6 @@
 @section('content')
 <div class="container py-3">
   <h3 class="mb-3">NASA OSDR</h3>
-  <div class="small text-muted mb-2">Источник {{ $src }}</div>
 
   <div class="table-responsive">
     <table class="table table-sm table-striped align-middle">

@@ -7,11 +7,98 @@ use App\Support\JwstHelper;
 
 class JwstController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $jw = new JwstHelper();
+        $featured = null;
+
+        // Проверяем, сохранено ли выбранное наблюдение в сессии
+        $selectedObs = session('jwst_selected_observation');
+
+        if ($selectedObs && is_array($selectedObs)) {
+            // Используем сохраненное наблюдение
+            $featured = $selectedObs;
+        } else {
+            // Показываем последнее наблюдение по умолчанию
+            $resp = $jw->get('all/type/jpg', ['page' => 1, 'perPage' => 1]);
+            $list = $resp['body'] ?? ($resp['data'] ?? (is_array($resp) ? $resp : []));
+
+            if (!empty($list) && is_array($list)) {
+                $item = $list[0];
+                if (is_array($item)) {
+                    // выбираем валидную картинку
+                    $url = null;
+                    $loc = $item['location'] ?? $item['url'] ?? null;
+                    $thumb = $item['thumbnail'] ?? null;
+                    foreach ([$loc, $thumb] as $u) {
+                        if (is_string($u) && preg_match('~\.(jpg|jpeg|png)(\?.*)?$~i', $u)) { $url = $u; break; }
+                    }
+                    if (!$url) {
+                        $url = \App\Support\JwstHelper::pickImageUrl($item);
+                    }
+
+                    if ($url) {
+                        // фильтр по инструменту
+                        $instList = [];
+                        foreach (($item['details']['instruments'] ?? []) as $I) {
+                            if (is_array($I) && !empty($I['instrument'])) $instList[] = strtoupper($I['instrument']);
+                        }
+
+                        $featured = [
+                            'url' => $url,
+                            'obs_id' => (string)($item['observation_id'] ?? $item['observationId'] ?? ''),
+                            'program' => (string)($item['program'] ?? ''),
+                            'suffix' => (string)($item['details']['suffix'] ?? $item['suffix'] ?? ''),
+                            'instruments' => $instList,
+                            'title' => trim($item['title'] ?? ''),
+                            'description' => trim($item['description'] ?? ''),
+                            'link' => $loc ?: $url,
+                            'details' => $item['details'] ?? [],
+                        ];
+                    }
+                }
+            }
+        }
+
         return view('jwst', [
+            'featured' => $featured,
             'gallery' => [],
         ]);
+    }
+
+    /**
+     * Выбор наблюдения из галереи
+     */
+    public function selectObservation(Request $request)
+    {
+        $obsId = $request->input('obs_id');
+        $program = $request->input('program');
+        $suffix = $request->input('suffix');
+        $inst = $request->input('inst', []);
+        $url = $request->input('url');
+        $link = $request->input('link');
+        $caption = $request->input('caption');
+
+        if ($obsId && $url) {
+            $featured = [
+                'url' => $url,
+                'obs_id' => $obsId,
+                'program' => $program ?: '',
+                'suffix' => $suffix ?: '',
+                'instruments' => is_array($inst) ? $inst : [],
+                'title' => '',
+                'description' => '',
+                'link' => $link ?: $url,
+                'details' => [],
+            ];
+
+            // Сохраняем в сессии
+            session(['jwst_selected_observation' => $featured]);
+
+            return response()->json(['success' => true]);
+        }
+
+        return response()->json(['success' => false], 400);
     }
 
     /**
