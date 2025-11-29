@@ -11,11 +11,20 @@ use crate::services::*;
 #[derive(Clone)]
 pub struct CacheServiceImpl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> {
     repo: R,
+    redis_repo: Option<crate::repo::RedisRepos>,
 }
 
 impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
     pub fn new(repo: R) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            redis_repo: None,
+        }
+    }
+
+    pub fn with_redis(mut self, redis_repo: crate::repo::RedisRepos) -> Self {
+        self.redis_repo = Some(redis_repo);
+        self
     }
 }
 
@@ -46,6 +55,8 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse APOD response: {}", e)))?;
 
+        let json_str = serde_json::to_string(&json).unwrap();
+
         let cache_entry = SpaceCache::new("apod".to_string(), json);
         cache_entry
             .validate()
@@ -55,6 +66,11 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
             .insert_cache_entry(&cache_entry)
             .await
             .map_err(|e| ServiceError::RepositoryError(e.to_string()))?;
+
+        // Cache in Redis if available (TTL: 1 hour)
+        if let Some(ref redis_repo) = self.redis_repo {
+            let _ = redis_repo.set_cache("apod", &json_str, Some(3600)).await;
+        }
 
         Ok(cache_entry)
     }
@@ -90,6 +106,8 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse NEO response: {}", e)))?;
 
+        let json_str = serde_json::to_string(&json).unwrap();
+
         let cache_entry = SpaceCache::new("neo".to_string(), json);
         cache_entry
             .validate()
@@ -99,6 +117,11 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
             .insert_cache_entry(&cache_entry)
             .await
             .map_err(|e| ServiceError::RepositoryError(e.to_string()))?;
+
+        // Cache in Redis if available (TTL: 1 hour)
+        if let Some(ref redis_repo) = self.redis_repo {
+            let _ = redis_repo.set_cache("neo", &json_str, Some(3600)).await;
+        }
 
         Ok(cache_entry)
     }
@@ -140,6 +163,8 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse SpaceX response: {}", e)))?;
 
+        let json_str = serde_json::to_string(&json).unwrap();
+
         let cache_entry = SpaceCache::new("spacex".to_string(), json);
         cache_entry
             .validate()
@@ -150,10 +175,28 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
             .await
             .map_err(|e| ServiceError::RepositoryError(e.to_string()))?;
 
+        // Cache in Redis if available (TTL: 1 hour)
+        if let Some(ref redis_repo) = self.redis_repo {
+            let _ = redis_repo.set_cache("spacex", &json_str, Some(3600)).await;
+        }
+
         Ok(cache_entry)
     }
 
     async fn get_latest_cache_entry(&self, source: &str) -> Result<Option<SpaceCache>> {
+        // Try Redis cache first
+        if let Some(ref redis_repo) = self.redis_repo {
+            if let Ok(Some(cached_data)) = redis_repo.get_cache(source).await {
+                if let Ok(json) = serde_json::from_str::<Value>(&cached_data) {
+                    let cache_entry = SpaceCache::new(source.to_string(), json);
+                    if cache_entry.validate().is_ok() {
+                        return Ok(Some(cache_entry));
+                    }
+                }
+            }
+        }
+
+        // Fallback to PostgreSQL
         self.repo
             .get_latest_cache_entry(source)
             .await
@@ -257,7 +300,7 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse DONKI FLR response: {}", e)))?;
 
-        let cache_entry = SpaceCache::new("flr".to_string(), json);
+        let cache_entry = SpaceCache::new("flr".to_string(), json.clone());
         cache_entry
             .validate()
             .map_err(|e| ServiceError::ValidationError(e.to_string()))?;
@@ -266,6 +309,11 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
             .insert_cache_entry(&cache_entry)
             .await
             .map_err(|e| ServiceError::RepositoryError(e.to_string()))?;
+
+        // Cache in Redis if available (TTL: 1 hour)
+        if let Some(ref redis_repo) = self.redis_repo {
+            let _ = redis_repo.set_cache("flr", &serde_json::to_string(&json).unwrap(), Some(3600)).await;
+        }
 
         Ok(cache_entry)
     }

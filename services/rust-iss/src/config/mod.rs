@@ -6,6 +6,7 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub database: DatabaseConfig,
+    pub redis: Option<RedisConfig>,
     pub nasa: NasaConfig,
     pub iss: IssConfig,
     pub spacex: SpaceXConfig,
@@ -66,11 +67,17 @@ pub struct OsdrConfig {
     pub list_limit: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct RedisConfig {
+    pub url: String,
+}
+
 impl AppConfig {
     /// Load configuration from environment variables with defaults
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
             database: DatabaseConfig::from_env()?,
+            redis: RedisConfig::from_env(),
             nasa: NasaConfig::from_env()?,
             iss: IssConfig::from_env()?,
             spacex: SpaceXConfig::from_env()?,
@@ -83,6 +90,9 @@ impl AppConfig {
     /// Validate the configuration
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.database.validate()?;
+        if let Some(ref redis) = &self.redis {
+            redis.validate()?;
+        }
         self.nasa.validate()?;
         self.iss.validate()?;
         self.spacex.validate()?;
@@ -112,6 +122,19 @@ impl DatabaseConfig {
         }
         if self.max_connections == 0 {
             return Err(ConfigError::InvalidValue("DATABASE_MAX_CONNECTIONS must be greater than 0".to_string()));
+        }
+        Ok(())
+    }
+}
+
+impl RedisConfig {
+    fn from_env() -> Option<Self> {
+        env::var("REDIS_URL").ok().map(|url| Self { url })
+    }
+
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.url.is_empty() {
+            return Err(ConfigError::InvalidValue("REDIS_URL cannot be empty".to_string()));
         }
         Ok(())
     }

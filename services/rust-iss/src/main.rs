@@ -31,6 +31,7 @@ use config::*;
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
+    redis_repo: Option<RedisRepos>,
     iss_service: IssServiceImpl<PgRepos>,
     osdr_service: OsdrServiceImpl<PgRepos>,
     cache_service: CacheServiceImpl<PgRepos>,
@@ -58,6 +59,23 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     init_db(&pool).await?;
 
+    // Initialize Redis repository (optional)
+    let redis_repo = if let Some(redis_config) = &config.redis {
+        match RedisRepos::new(&redis_config.url).await {
+            Ok(repo) => {
+                info!("Redis connected successfully");
+                Some(repo)
+            }
+            Err(e) => {
+                warn!("Failed to connect to Redis: {}. Continuing without Redis.", e);
+                None
+            }
+        }
+    } else {
+        info!("Redis not configured, continuing without Redis");
+        None
+    };
+
     // Initialize repositories
     let iss_repo = PgRepos::new(pool.clone());
     let osdr_repo = PgRepos::new(pool.clone());
@@ -66,7 +84,12 @@ async fn main() -> anyhow::Result<()> {
     // Initialize services with dependency injection
     let iss_service = IssServiceImpl::new(iss_repo);
     let osdr_service = OsdrServiceImpl::new(osdr_repo);
-    let cache_service = CacheServiceImpl::new(cache_repo);
+    let mut cache_service = CacheServiceImpl::new(cache_repo);
+
+    // Add Redis support to cache service if available
+    if let Some(ref redis_repo) = redis_repo {
+        cache_service = cache_service.with_redis(redis_repo.clone());
+    }
 
     // Initialize HTTP clients
     let http_config = HttpClientConfig::default();
@@ -77,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
     // Create application state
     let state = AppState {
         pool: pool.clone(),
+        redis_repo,
         iss_service,
         osdr_service,
         cache_service,

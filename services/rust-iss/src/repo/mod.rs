@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use redis::{aio::ConnectionManager, AsyncCommands};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
 use std::result;
+use std::sync::Arc;
 
 use crate::domain::*;
 
@@ -56,6 +58,15 @@ pub trait CacheRepo {
     async fn get_cache_entries(&self, source: &str, limit: i64) -> Result<Vec<SpaceCache>>;
 }
 
+/// Redis Repository trait
+#[async_trait]
+pub trait RedisRepo {
+    async fn set_cache(&self, key: &str, value: &str, ttl_seconds: Option<usize>) -> Result<()>;
+    async fn get_cache(&self, key: &str) -> Result<Option<String>>;
+    async fn delete_cache(&self, key: &str) -> Result<()>;
+    async fn exists_cache(&self, key: &str) -> Result<bool>;
+}
+
 /// PostgreSQL implementation of repositories
 #[derive(Clone)]
 pub struct PgRepos {
@@ -65,6 +76,27 @@ pub struct PgRepos {
 impl PgRepos {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+}
+
+/// Redis implementation of repositories
+#[derive(Clone)]
+pub struct RedisRepos {
+    client: ConnectionManager,
+}
+
+impl RedisRepos {
+    pub async fn new(redis_url: &str) -> Result<Self> {
+        let client = redis::Client::open(redis_url)
+            .map_err(|e| RepoError::DatabaseError(format!("Failed to create Redis client: {}", e)))?;
+
+        let connection_manager = ConnectionManager::new(client)
+            .await
+            .map_err(|e| RepoError::DatabaseError(format!("Failed to create Redis connection manager: {}", e)))?;
+
+        Ok(Self {
+            client: connection_manager,
+        })
     }
 }
 
@@ -294,5 +326,62 @@ impl CacheRepo for PgRepos {
             results.push(entry);
         }
         Ok(results)
+    }
+}
+
+#[async_trait]
+impl RedisRepo for RedisRepos {
+    async fn set_cache(&self, key: &str, value: &str, ttl_seconds: Option<usize>) -> Result<()> {
+        let mut conn = self.client.clone();
+        let _: () = redis::cmd("SET")
+            .arg(key)
+            .arg(value)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| RepoError::DatabaseError(format!("Redis SET failed: {}", e)))?;
+
+        if let Some(ttl) = ttl_seconds {
+            let _: () = redis::cmd("EXPIRE")
+                .arg(key)
+                .arg(ttl)
+                .query_async(&mut conn)
+                .await
+                .map_err(|e| RepoError::DatabaseError(format!("Redis EXPIRE failed: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_cache(&self, key: &str) -> Result<Option<String>> {
+        let mut conn = self.client.clone();
+        let result: Option<String> = redis::cmd("GET")
+            .arg(key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| RepoError::DatabaseError(format!("Redis GET failed: {}", e)))?;
+
+        Ok(result)
+    }
+
+    async fn delete_cache(&self, key: &str) -> Result<()> {
+        let mut conn = self.client.clone();
+        let _: () = redis::cmd("DEL")
+            .arg(key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| RepoError::DatabaseError(format!("Redis DEL failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    async fn exists_cache(&self, key: &str) -> Result<bool> {
+        let mut conn = self.client.clone();
+        let exists: i32 = redis::cmd("EXISTS")
+            .arg(key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| RepoError::DatabaseError(format!("Redis EXISTS failed: {}", e)))?;
+
+        Ok(exists > 0)
     }
 }
