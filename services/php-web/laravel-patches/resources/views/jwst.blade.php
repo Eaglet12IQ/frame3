@@ -9,7 +9,7 @@
     <div class="col-lg-7">
       <div class="card shadow-sm h-100">
         <div class="card-body">
-          <h5 class="card-title">Выбранное наблюдение</h5>
+          <h5 class="card-title fade-in">Выбранное наблюдение</h5>
           @if($featured)
             <div class="row">
               <div class="col-md-6">
@@ -97,7 +97,7 @@
             .jwst-prev{left:-.25rem} .jwst-next{right:-.25rem}
           </style>
 
-          <div class="jwst-slider">
+          <div class="jwst-slider fade-in">
             <button class="btn btn-light border jwst-nav jwst-prev" type="button" aria-label="Prev">‹</button>
             <div id="jwstTrack" class="jwst-track border rounded"></div>
             <button class="btn btn-light border jwst-nav jwst-next" type="button" aria-label="Next">›</button>
@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       track.innerHTML = '';
       (js.items||[]).forEach(it=>{
         const fig = document.createElement('figure');
-        fig.className = 'jwst-item m-0';
+        fig.className = 'jwst-item m-0 fade-in';
         fig.innerHTML = `
           <div class="jwst-image-container" data-obs-id="${it.obs}" style="cursor:pointer;">
             <img loading="lazy" src="${it.url}" alt="JWST">
@@ -233,7 +233,6 @@ document.addEventListener('DOMContentLoaded', async function () {
           updateFeaturedObservation(obsData);
         });
       });
-      info.textContent = `Источник: ${js.source} · Показано ${js.count||0}`;
     }catch(e){
       track.innerHTML = '<div class="p-3 text-danger">Ошибка загрузки</div>';
     }
@@ -252,6 +251,9 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   // стартовые данные
   loadFeed({source:'jpg', perPage:24});
+
+  // Sorting and filtering functionality for JWST table (if exists)
+  // Note: JWST page uses a gallery, not a table, so no sorting needed here
 });
 </script>
 @endsection

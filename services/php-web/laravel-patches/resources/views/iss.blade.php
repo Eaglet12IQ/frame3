@@ -6,7 +6,7 @@
 
   <div class="row g-3">
     <div class="col-md-6">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm fade-in">
         <div class="card-body">
           <h5 class="card-title">Последний снимок</h5>
           @if(!empty($last['payload']))
@@ -25,7 +25,7 @@
     </div>
 
     <div class="col-md-6">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm slide-in">
         <div class="card-body">
           <h5 class="card-title">Тренд движения</h5>
           @if(!empty($trend))

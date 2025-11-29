@@ -4,12 +4,12 @@
 <div class="container pb-5">
   <div class="row">
     <div class="col-12">
-      <p class="text-muted">Добро пожаловать на Space Dashboard. Перейдите к отдельным разделам, чтобы получить подробную информацию.</p>
+      <p class="text-muted fade-in">Добро пожаловать на Space Dashboard. Перейдите к отдельным разделам, чтобы получить подробную информацию.</p>
     </div>
   </div>
 
 {{-- ===== CMS-блок из БД (нарочно сырая вставка) ===== --}}
-<div class="card mt-3">
+<div class="card mt-3 slide-in">
   <div class="card-body">
     @php
       try {
