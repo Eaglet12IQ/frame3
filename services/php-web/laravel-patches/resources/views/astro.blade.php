@@ -16,7 +16,7 @@
               <input type="number" step="0.0001" class="form-control form-control-sm" name="lon" value="37.6176" placeholder="lon">
             </div>
             <div class="col-auto">
-              <input type="number" min="1" max="30" class="form-control form-control-sm" name="days" value="7" style="width:90px" title="дней">
+              <input type="number" step="0.1" class="form-control form-control-sm" name="elevation" value="7" style="width:90px" title="высота (м)">
             </div>
             <div class="col-auto">
               <button class="btn btn-sm btn-primary" type="submit">Показать</button>
@@ -60,14 +60,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function collect(root){
     const rows = [];
-    (function dfs(x){
-      if (!x || typeof x !== 'object') return;
-      if (Array.isArray(x)) { x.forEach(dfs); return; }
-      if ((x.type || x.event_type || x.category) && (x.name || x.body || x.object || x.target)) {
-        rows.push(normalize(x));
-      }
-      Object.values(x).forEach(dfs);
-    })(root);
+    if (root && root.data && root.data.rows) {
+      root.data.rows.forEach(row => {
+        if (row.body && row.events) {
+          row.events.forEach(event => {
+            rows.push({
+              name: row.body.name || row.body.id || '—',
+              type: event.type || '—',
+              when: event.eventHighlights ? (event.eventHighlights.peak ? event.eventHighlights.peak.date : (event.eventHighlights.partialStart ? event.eventHighlights.partialStart.date : '—')) : '—',
+              extra: event.extraInfo ? (event.extraInfo.obscuration ? `Obscuration: ${event.extraInfo.obscuration}` : '') : ''
+            });
+          });
+        }
+      });
+    }
     return rows;
   }
 
