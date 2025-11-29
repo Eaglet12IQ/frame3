@@ -4,8 +4,8 @@ use Illuminate\Support\Facades\DB;
 
 class CmsController extends Controller {
   public function page(string $slug) {
-    $row = DB::selectOne("SELECT title, content FROM cms_blocks WHERE slug = ? AND is_active = TRUE", [$slug]);
+    $row = DB::selectOne("SELECT title, body FROM cms_pages WHERE slug = ?", [$slug]);
     if (!$row) abort(404);
-    return response()->view('cms.page', ['title' => $row->title, 'html' => $row->content]);
+    return response()->view('cms.page', ['title' => $row->title, 'html' => $row->body]);
   }
 }

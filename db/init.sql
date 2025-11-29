@@ -39,3 +39,8 @@ VALUES
 ('unsafe', 'Небезопасный пример', '<script>console.log("XSS training")
 </script><p>Если вы видите всплывашку значит защита не работает</p>')
 ON CONFLICT DO NOTHING;
+
+INSERT INTO cms_blocks(slug, title, content, is_active)
+VALUES
+('dashboard_experiment', 'Космические факты', '<div class="alert alert-info"><h5>Интересные факты о космосе</h5><ul><li>МКС движется со скоростью около 28 000 км/ч</li><li>JWST видит свет, излученный 13.5 млрд лет назад</li><li>Астрономические события можно наблюдать с Земли</li></ul><p><small>Обновлено: ' || NOW() || '</small></p></div>', TRUE)
+ON CONFLICT DO NOTHING;
