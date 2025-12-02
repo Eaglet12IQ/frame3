@@ -29,14 +29,22 @@ class IssController extends Controller
 
     public function last()
     {
-        $data = $this->issService->getLast();
-        return response()->json($data);
+        try {
+            $data = $this->issService->getLast();
+            return response()->json($data);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
+        }
     }
 
     public function trend(Request $request)
     {
-        $limit = $request->query('limit', 240);
-        $data = $this->issService->getTrend($limit);
-        return response()->json($data);
+        try {
+            $limit = $request->query('limit', 240);
+            $data = $this->issService->getTrend($limit);
+            return response()->json($data);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
+        }
     }
 }

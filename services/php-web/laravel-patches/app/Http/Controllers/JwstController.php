@@ -29,11 +29,19 @@ class JwstController extends Controller
      */
     public function selectObservation(Request $request)
     {
-        $data = $request->only(['obs_id', 'program', 'suffix', 'inst', 'url', 'link', 'caption']);
+        try {
+            $data = $request->only(['obs_id', 'program', 'suffix', 'inst', 'url', 'link', 'caption']);
 
-        $success = $this->jwstService->selectObservation($data);
+            $success = $this->jwstService->selectObservation($data);
 
-        return response()->json(['success' => $success], $success ? 200 : 400);
+            if ($success) {
+                return response()->json(['success' => $success]);
+            } else {
+                return $this->errorResponse('Failed to select observation', 400);
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
+        }
     }
 
     /**
@@ -47,10 +55,14 @@ class JwstController extends Controller
      */
     public function feed(Request $r)
     {
-        $params = $r->query();
+        try {
+            $params = $r->query();
 
-        $dto = $this->jwstService->getFeed($params);
+            $dto = $this->jwstService->getFeed($params);
 
-        return response()->json($dto->toArray());
+            return response()->json($dto->toArray());
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
+        }
     }
 }

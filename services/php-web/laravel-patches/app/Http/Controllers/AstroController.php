@@ -26,10 +26,7 @@ class AstroController extends Controller
             $dto = $this->astroService->getEvents($params);
             return response()->json($dto->toArray());
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage(),
-                'code' => $e->getCode() ?: 500
-            ], $e->getCode() ?: 500);
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
         }
     }
 }

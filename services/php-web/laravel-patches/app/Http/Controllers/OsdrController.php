@@ -16,10 +16,14 @@ class OsdrController extends Controller
 
     public function index(Request $request)
     {
-        $limit = (int) $request->query('limit', 20);
+        try {
+            $limit = (int) $request->query('limit', 20);
 
-        $dto = $this->osdrService->getOsdrList($limit);
+            $dto = $this->osdrService->getOsdrList($limit);
 
-        return view('osdr', $dto->toArray());
+            return view('osdr', $dto->toArray());
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
+        }
     }
 }
