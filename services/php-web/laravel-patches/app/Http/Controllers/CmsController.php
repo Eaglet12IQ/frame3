@@ -1,11 +1,22 @@
 <?php
-namespace App\Http\Controllers;
-use Illuminate\Support\Facades\DB;
 
-class CmsController extends Controller {
-  public function page(string $slug) {
-    $row = DB::selectOne("SELECT title, body FROM cms_pages WHERE slug = ?", [$slug]);
-    if (!$row) abort(404);
-    return response()->view('cms.page', ['title' => $row->title, 'html' => $row->body]);
-  }
+namespace App\Http\Controllers;
+
+use App\Repositories\CmsPageRepository;
+
+class CmsController extends Controller
+{
+    protected $cmsPageRepository;
+
+    public function __construct(CmsPageRepository $cmsPageRepository)
+    {
+        $this->cmsPageRepository = $cmsPageRepository;
+    }
+
+    public function page(string $slug)
+    {
+        $row = $this->cmsPageRepository->getPageContent($slug);
+        if (!$row) abort(404);
+        return response()->view('cms.page', ['title' => $row->title, 'html' => $row->body]);
+    }
 }

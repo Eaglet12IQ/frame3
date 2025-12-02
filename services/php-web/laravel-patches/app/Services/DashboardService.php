@@ -2,23 +2,29 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\DB;
+use App\Repositories\CmsBlockRepository;
 
 class DashboardService
 {
     protected $issService;
     protected $telemetryService;
+    protected $cmsBlockRepository;
 
-    public function __construct(IssService $issService, TelemetryService $telemetryService)
-    {
+    public function __construct(
+        IssService $issService,
+        TelemetryService $telemetryService,
+        CmsBlockRepository $cmsBlockRepository
+    ) {
         $this->issService = $issService;
         $this->telemetryService = $telemetryService;
+        $this->cmsBlockRepository = $cmsBlockRepository;
     }
 
     public function getDashboardData(): array
     {
         $iss = $this->issService->getLast();
         $telemetry = $this->telemetryService->getLatestTelemetry(10);
+        $cmsBlock = $this->cmsBlockRepository->getActiveBlockBySlug('dashboard_experiment');
 
         return [
             'iss' => $iss,
@@ -34,6 +40,7 @@ class DashboardService
                 'neo_total' => 0,
             ],
             'telemetry' => $telemetry,
+            'cms_block' => $cmsBlock,
         ];
     }
 }
