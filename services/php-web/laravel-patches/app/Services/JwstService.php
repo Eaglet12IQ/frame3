@@ -2,15 +2,15 @@
 
 namespace App\Services;
 
-use App\Support\JwstHelper;
+use App\Clients\JwstClient;
 
 class JwstService
 {
-    protected $jwstHelper;
+    protected $jwstClient;
 
-    public function __construct()
+    public function __construct(JwstClient $jwstClient)
     {
-        $this->jwstHelper = new JwstHelper();
+        $this->jwstClient = $jwstClient;
     }
 
     public function getFeaturedObservation(): ?array
@@ -21,7 +21,7 @@ class JwstService
             return $selectedObs;
         }
 
-        $resp = $this->jwstHelper->get('all/type/jpg', ['page' => 1, 'perPage' => 1]);
+        $resp = $this->jwstClient->get('all/type/jpg', ['page' => 1, 'perPage' => 1]);
         $list = $resp['body'] ?? ($resp['data'] ?? (is_array($resp) ? $resp : []));
 
         if (!empty($list) && is_array($list)) {
@@ -95,7 +95,7 @@ class JwstService
             $path = 'program/id/' . rawurlencode($prog);
         }
 
-        $resp = $this->jwstHelper->get($path, ['page' => $page, 'perPage' => $per]);
+        $resp = $this->jwstClient->get($path, ['page' => $page, 'perPage' => $per]);
         $list = $resp['body'] ?? ($resp['data'] ?? (is_array($resp) ? $resp : []));
 
         $items = [];
@@ -141,7 +141,7 @@ class JwstService
                 return $u;
             }
         }
-        return JwstHelper::pickImageUrl($item);
+        return $this->jwstClient->pickImageUrl($item);
     }
 
     private function extractInstruments(array $item): array

@@ -2,30 +2,27 @@
 
 namespace App\Services;
 
+use App\Clients\RustClient;
+
 class OsdrService
 {
-    private function base(): string
-    {
-        return getenv('RUST_BASE') ?: 'http://rust_iss:3000';
-    }
+    private RustClient $client;
 
-    private function getJson(string $url): array
+    public function __construct(RustClient $client)
     {
-        $raw = @file_get_contents($url);
-        return $raw ? json_decode($raw, true) : ['items' => []];
+        $this->client = $client;
     }
 
     public function getOsdrList(int $limit = 20): array
     {
-        $base = $this->base();
-        $data = $this->getJson($base . '/osdr/list?limit=' . $limit);
+        $data = $this->client->getJson('osdr/list', ['limit' => $limit]);
         $items = $data['items'] ?? [];
 
         $items = $this->flattenOsdr($items);
 
         return [
             'items' => $items,
-            'src' => $base . '/osdr/list?limit=' . $limit,
+            'src' => $this->client->getBaseUrl() . '/osdr/list?limit=' . $limit,
         ];
     }
 

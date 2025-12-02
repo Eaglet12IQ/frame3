@@ -2,29 +2,24 @@
 
 namespace App\Services;
 
+use App\Clients\RustClient;
+
 class IssService
 {
-    private function base(): string
-    {
-        return getenv('RUST_BASE') ?: 'http://rust_iss:3000';
-    }
+    private RustClient $client;
 
-    private function getJson(string $url, array $qs = []): array
+    public function __construct(RustClient $client)
     {
-        if ($qs) {
-            $url .= (str_contains($url, '?') ? '&' : '?') . http_build_query($qs);
-        }
-        $raw = @file_get_contents($url);
-        return $raw ? (json_decode($raw, true) ?: []) : [];
+        $this->client = $client;
     }
 
     public function getLast(): array
     {
-        return $this->getJson($this->base() . '/last');
+        return $this->client->getJson('last');
     }
 
     public function getTrend(int $limit = 240): array
     {
-        return $this->getJson($this->base() . '/iss/trend', ['limit' => $limit]);
+        return $this->client->getJson('iss/trend', ['limit' => $limit]);
     }
 }
