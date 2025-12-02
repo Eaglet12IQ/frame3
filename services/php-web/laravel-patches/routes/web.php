@@ -2,7 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::middleware([\App\Http\Middleware\LoggingMiddleware::class])->group(function () {
+Route::middleware([\App\Http\Middleware\LoggingMiddleware::class, \App\Http\Middleware\RateLimitingMiddleware::class])->group(function () {
     Route::get('/', fn() => redirect('/dashboard'));
 
     // Панели
