@@ -7,6 +7,7 @@ Route::middleware([\App\Http\Middleware\LoggingMiddleware::class, \App\Http\Midd
 
     // Панели
     Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index']);
+    Route::get('/dashboard/download-telemetry-csv', [\App\Http\Controllers\DashboardController::class, 'downloadTelemetryCsv'])->name('dashboard.download-telemetry-csv');
     Route::get('/iss',       [\App\Http\Controllers\IssController::class,       'index']);
     Route::get('/jwst',      [\App\Http\Controllers\JwstController::class,      'index']);
     Route::get('/osdr',      [\App\Http\Controllers\OsdrController::class,      'index']);

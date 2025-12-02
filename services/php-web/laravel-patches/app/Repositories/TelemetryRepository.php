@@ -19,4 +19,13 @@ class TelemetryRepository extends BaseRepository
             ->limit($limit)
             ->get();
     }
+
+    public function getTelemetryBySourceFile(string $sourceFile)
+    {
+        return $this->model
+            ->select('recorded_at', 'voltage', 'temp', 'source_file')
+            ->where('source_file', $sourceFile)
+            ->orderBy('recorded_at', 'desc')
+            ->get();
+    }
 }

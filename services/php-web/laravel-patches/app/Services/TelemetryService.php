@@ -17,4 +17,9 @@ class TelemetryService
     {
         return $this->telemetryRepository->getLatestTelemetry($limit);
     }
+
+    public function getTelemetryBySourceFile(string $sourceFile)
+    {
+        return $this->telemetryRepository->getTelemetryBySourceFile($sourceFile);
+    }
 }

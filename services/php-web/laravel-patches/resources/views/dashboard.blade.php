@@ -46,7 +46,7 @@
                 <td>{{ \Carbon\Carbon::parse($record['recorded_at'])->format('d.m.Y H:i:s') }}</td>
                 <td>{{ number_format($record['voltage'], 2) }}</td>
                 <td>{{ number_format($record['temp'], 2) }}</td>
-                <td>{{ $record['source_file'] }}</td>
+                <td><a href="{{ route('dashboard.download-telemetry-csv', ['source_file' => $record['source_file']]) }}" target="_blank">{{ $record['source_file'] }}</a></td>
               </tr>
             @endforeach
           @else
