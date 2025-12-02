@@ -3,27 +3,27 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Services\IssService;
 
 class IssController extends Controller
 {
-    private function base(): string { return getenv('RUST_BASE') ?: 'http://rust_iss:3000'; }
+    protected $issService;
 
-    private function getJson(string $url, array $qs = []): array {
-        if ($qs) $url .= (str_contains($url,'?')?'&':'?') . http_build_query($qs);
-        $raw = @file_get_contents($url);
-        return $raw ? (json_decode($raw, true) ?: []) : [];
+    public function __construct(IssService $issService)
+    {
+        $this->issService = $issService;
     }
 
     public function index()
     {
-        $b     = $this->base();
-        $last  = $this->getJson($b.'/last');
-        $trend = $this->getJson($b.'/iss/trend', ['limit' => 240]);
+        $last = $this->issService->getLast();
+        $trend = $this->issService->getTrend(240);
+        $base = getenv('RUST_BASE') ?: 'http://rust_iss:3000';
 
         return view('iss', [
             'last' => $last,
             'trend' => $trend,
-            'base' => $b,
+            'base' => $base,
         ]);
     }
 }
