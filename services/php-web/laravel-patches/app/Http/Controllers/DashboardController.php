@@ -47,11 +47,12 @@ class DashboardController extends Controller
             abort(404, 'No telemetry data found for the specified source file');
         }
 
-        $csvData = "Время записи,Напряжение (V),Температура (°C),Источник\n";
+        $csvData = "Время записи,Напряжение (V),Температура (°C),Валидность,Источник\n";
         foreach ($telemetry as $record) {
             $csvData .= \Carbon\Carbon::parse($record['recorded_at'])->format('d.m.Y H:i:s') . ',';
             $csvData .= number_format($record['voltage'], 2) . ',';
             $csvData .= number_format($record['temp'], 2) . ',';
+            $csvData .= ($record['is_valid'] ? 'Да' : 'Нет') . ',';
             $csvData .= $record['source_file'] . "\n";
         }
 

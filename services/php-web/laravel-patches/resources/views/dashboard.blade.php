@@ -23,7 +23,7 @@
 <div class="card mt-3 shadow-sm slide-in">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h5 class="card-title m-0 fade-in">Телеметрия из Pascal Legacy Service</h5>
+      <h5 class="card-title m-0 fade-in">Телеметрия из Legacy Service</h5>
     </div>
 
     <div class="mb-3">
@@ -36,7 +36,8 @@
             <th class="sortable" data-column="0">Время записи</th>
             <th class="sortable" data-column="1">Напряжение (V)</th>
             <th class="sortable" data-column="2">Температура (°C)</th>
-            <th class="sortable" data-column="3">Источник</th>
+            <th class="sortable" data-column="3">Валидность</th>
+            <th class="sortable" data-column="4">Источник</th>
           </tr>
         </thead>
         <tbody id="telemetryBody">
@@ -46,11 +47,12 @@
                 <td>{{ \Carbon\Carbon::parse($record['recorded_at'])->format('d.m.Y H:i:s') }}</td>
                 <td>{{ number_format($record['voltage'], 2) }}</td>
                 <td>{{ number_format($record['temp'], 2) }}</td>
+                <td>{{ $record['is_valid'] ? 'Да' : 'Нет' }}</td>
                 <td><a href="{{ route('dashboard.download-telemetry-csv', ['source_file' => $record['source_file']]) }}" target="_blank">{{ $record['source_file'] }}</a></td>
               </tr>
             @endforeach
           @else
-            <tr><td colspan="4" class="text-muted">Нет данных телеметрии.</td></tr>
+            <tr><td colspan="5" class="text-muted">Нет данных телеметрии.</td></tr>
           @endif
         </tbody>
       </table>

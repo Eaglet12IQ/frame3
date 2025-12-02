@@ -14,7 +14,7 @@ class TelemetryRepository extends BaseRepository
     public function getLatestTelemetry(int $limit = 10)
     {
         return $this->model
-            ->select('recorded_at', 'voltage', 'temp', 'source_file')
+            ->select('recorded_at', 'voltage', 'temp', 'source_file', 'is_valid')
             ->orderBy('recorded_at', 'desc')
             ->limit($limit)
             ->get();
@@ -23,7 +23,7 @@ class TelemetryRepository extends BaseRepository
     public function getTelemetryBySourceFile(string $sourceFile)
     {
         return $this->model
-            ->select('recorded_at', 'voltage', 'temp', 'source_file')
+            ->select('recorded_at', 'voltage', 'temp', 'source_file', 'is_valid')
             ->where('source_file', $sourceFile)
             ->orderBy('recorded_at', 'desc')
             ->get();
