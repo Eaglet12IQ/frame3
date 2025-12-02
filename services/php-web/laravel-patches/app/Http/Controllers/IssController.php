@@ -26,4 +26,17 @@ class IssController extends Controller
             'base' => $base,
         ]);
     }
+
+    public function last()
+    {
+        $data = $this->issService->getLast();
+        return response()->json($data);
+    }
+
+    public function trend(Request $request)
+    {
+        $limit = $request->query('limit', 240);
+        $data = $this->issService->getTrend($limit);
+        return response()->json($data);
+    }
 }

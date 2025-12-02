@@ -11,9 +11,9 @@ Route::get('/jwst',      [\App\Http\Controllers\JwstController::class,      'ind
 Route::get('/osdr',      [\App\Http\Controllers\OsdrController::class,      'index']);
 Route::get('/astro',     [\App\Http\Controllers\AstroController::class,     'index']);
 
-// Прокси к rust_iss
-Route::get('/api/iss/last',  [\App\Http\Controllers\ProxyController::class, 'last']);
-Route::get('/api/iss/trend', [\App\Http\Controllers\ProxyController::class, 'trend']);
+// ISS API endpoints
+Route::get('/api/iss/last',  [\App\Http\Controllers\IssController::class, 'last']);
+Route::get('/api/iss/trend', [\App\Http\Controllers\IssController::class, 'trend']);
 
 // JWST галерея (JSON)
 Route::get('/api/jwst/feed', [\App\Http\Controllers\JwstController::class, 'feed']);
