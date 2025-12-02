@@ -20,6 +20,7 @@ mod services;
 mod clients;
 mod config;
 mod handlers;
+mod middleware;
 mod routes;
 
 use domain::*;

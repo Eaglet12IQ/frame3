@@ -1,7 +1,7 @@
 use axum::{
     http::{HeaderMap, Request},
     routing::get,
-    middleware::{self, Next},
+    middleware::Next,
     response::Response,
     Router,
 };
@@ -12,6 +12,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::handlers;
+use crate::middleware::rate_limit_middleware;
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -53,6 +54,7 @@ pub fn create_routes() -> Router<AppState> {
         .merge(iss_routes())
         .merge(osdr_routes())
         .merge(cache_routes())
+        .layer(axum::middleware::from_fn(rate_limit_middleware))
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(PropagateRequestIdLayer::x_request_id())
 }
