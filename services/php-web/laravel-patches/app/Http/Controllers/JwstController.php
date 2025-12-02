@@ -49,8 +49,8 @@ class JwstController extends Controller
     {
         $params = $r->query();
 
-        $data = $this->jwstService->getFeed($params);
+        $dto = $this->jwstService->getFeed($params);
 
-        return response()->json($data);
+        return response()->json($dto->toArray());
     }
 }

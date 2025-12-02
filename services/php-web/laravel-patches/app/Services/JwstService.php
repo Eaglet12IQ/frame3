@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Clients\JwstClient;
+use App\DTOs\JwstFeedDto;
 
 class JwstService
 {
@@ -78,7 +79,7 @@ class JwstService
         return false;
     }
 
-    public function getFeed(array $params = []): array
+    public function getFeed(array $params = []): JwstFeedDto
     {
         $src = $params['source'] ?? 'jpg';
         $sfx = trim($params['suffix'] ?? '');
@@ -125,11 +126,7 @@ class JwstService
             if (count($items) >= $per) break;
         }
 
-        return [
-            'source' => $path,
-            'count' => count($items),
-            'items' => $items,
-        ];
+        return new JwstFeedDto($path, count($items), $items);
     }
 
     private function pickImageUrl(array $item): ?string

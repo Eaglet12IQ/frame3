@@ -43,10 +43,10 @@
           @if(count($telemetry) > 0)
             @foreach($telemetry as $index => $record)
               <tr>
-                <td>{{ \Carbon\Carbon::parse($record->recorded_at)->format('d.m.Y H:i:s') }}</td>
-                <td>{{ number_format($record->voltage, 2) }}</td>
-                <td>{{ number_format($record->temp, 2) }}</td>
-                <td>{{ $record->source_file }}</td>
+                <td>{{ \Carbon\Carbon::parse($record['recorded_at'])->format('d.m.Y H:i:s') }}</td>
+                <td>{{ number_format($record['voltage'], 2) }}</td>
+                <td>{{ number_format($record['temp'], 2) }}</td>
+                <td>{{ $record['source_file'] }}</td>
               </tr>
             @endforeach
           @else

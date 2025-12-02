@@ -18,8 +18,8 @@ class OsdrController extends Controller
     {
         $limit = (int) $request->query('limit', 20);
 
-        $data = $this->osdrService->getOsdrList($limit);
+        $dto = $this->osdrService->getOsdrList($limit);
 
-        return view('osdr', $data);
+        return view('osdr', $dto->toArray());
     }
 }

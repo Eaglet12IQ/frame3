@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Clients\RustClient;
+use App\DTOs\OsdrListDto;
 
 class OsdrService
 {
@@ -13,17 +14,14 @@ class OsdrService
         $this->client = $client;
     }
 
-    public function getOsdrList(int $limit = 20): array
+    public function getOsdrList(int $limit = 20): OsdrListDto
     {
         $data = $this->client->getJson('osdr/list', ['limit' => $limit]);
         $items = $data['items'] ?? [];
 
         $items = $this->flattenOsdr($items);
 
-        return [
-            'items' => $items,
-            'src' => $this->client->getBaseUrl() . '/osdr/list?limit=' . $limit,
-        ];
+        return new OsdrListDto($items, $this->client->getBaseUrl() . '/osdr/list?limit=' . $limit);
     }
 
     /** Преобразует данные вида {"OSD-1": {...}, "OSD-2": {...}} в плоский список */

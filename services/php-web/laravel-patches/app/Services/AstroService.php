@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Clients\AstroClient;
+use App\DTOs\AstroEventsDto;
 
 class AstroService
 {
@@ -13,7 +14,7 @@ class AstroService
         $this->client = $client;
     }
 
-    public function getEvents(array $params = []): array
+    public function getEvents(array $params = []): AstroEventsDto
     {
         $lat = (float)($params['lat'] ?? 65.9558);
         $lon = (float)($params['lon'] ?? 37.6171);
@@ -33,21 +34,18 @@ class AstroService
             'output' => $output,
         ]);
 
-        return [
-            'data' => [
-                'dates' => [
-                    'from' => $from . 'T' . $time . '.000+03:00',
-                    'to' => $to . 'T' . $time . '.000+03:00'
-                ],
-                'observer' => [
-                    'location' => [
-                        'longitude' => $lon,
-                        'latitude' => $lat,
-                        'elevation' => $elev
-                    ]
-                ],
-                'rows' => $rows
+        $dates = [
+            'from' => $from . 'T' . $time . '.000+03:00',
+            'to' => $to . 'T' . $time . '.000+03:00'
+        ];
+        $observer = [
+            'location' => [
+                'longitude' => $lon,
+                'latitude' => $lat,
+                'elevation' => $elev
             ]
         ];
+
+        return new AstroEventsDto($dates, $observer, $rows);
     }
 }

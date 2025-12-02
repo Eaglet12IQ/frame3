@@ -16,8 +16,18 @@ class DashboardController extends Controller
 
     public function index()
     {
-        $data = $this->dashboardService->getDashboardData();
+        $dto = $this->dashboardService->getDashboardData();
+        $data = $dto->toArray();
 
-        return view('dashboard', $data);
+        return view('dashboard', [
+            'cms_block' => $data['cms_block'],
+            'telemetry' => $data['telemetry'],
+        ]);
+    }
+
+    public function data()
+    {
+        $dto = $this->dashboardService->getDashboardData();
+        return response()->json($dto->toArray());
     }
 }

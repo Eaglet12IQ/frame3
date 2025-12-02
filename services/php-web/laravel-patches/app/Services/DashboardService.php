@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Repositories\CmsBlockRepository;
+use App\DTOs\DashboardDataDto;
 
 class DashboardService
 {
@@ -20,27 +21,35 @@ class DashboardService
         $this->cmsBlockRepository = $cmsBlockRepository;
     }
 
-    public function getDashboardData(): array
+    public function getDashboardData(): DashboardDataDto
     {
         $iss = $this->issService->getLast();
-        $telemetry = $this->telemetryService->getLatestTelemetry(10);
+        $telemetry = $this->telemetryService->getLatestTelemetry(10)->toArray();
         $cmsBlock = $this->cmsBlockRepository->getActiveBlockBySlug('dashboard_experiment');
 
-        return [
-            'iss' => $iss,
-            'trend' => [], // Front-end will fetch /api/iss/trend via nginx proxy
-            'jw_gallery' => [], // Not needed server-side
-            'jw_observation_raw' => [],
-            'jw_observation_summary' => [],
-            'jw_observation_images' => [],
-            'jw_observation_files' => [],
-            'metrics' => [
-                'iss_speed' => $iss['payload']['velocity'] ?? null,
-                'iss_alt' => $iss['payload']['altitude'] ?? null,
-                'neo_total' => 0,
-            ],
-            'telemetry' => $telemetry,
-            'cms_block' => $cmsBlock,
+        $trend = []; // Front-end will fetch /api/iss/trend via nginx proxy
+        $jw_gallery = []; // Not needed server-side
+        $jw_observation_raw = [];
+        $jw_observation_summary = [];
+        $jw_observation_images = [];
+        $jw_observation_files = [];
+        $metrics = [
+            'iss_speed' => $iss['payload']['velocity'] ?? null,
+            'iss_alt' => $iss['payload']['altitude'] ?? null,
+            'neo_total' => 0,
         ];
+
+        return new DashboardDataDto(
+            $iss,
+            $trend,
+            $jw_gallery,
+            $jw_observation_raw,
+            $jw_observation_summary,
+            $jw_observation_images,
+            $jw_observation_files,
+            $metrics,
+            $telemetry,
+            $cmsBlock
+        );
     }
 }

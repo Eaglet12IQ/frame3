@@ -23,8 +23,8 @@ class AstroController extends Controller
     {
         try {
             $params = $r->query();
-            $data = $this->astroService->getEvents($params);
-            return response()->json($data);
+            $dto = $this->astroService->getEvents($params);
+            return response()->json($dto->toArray());
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage(),
