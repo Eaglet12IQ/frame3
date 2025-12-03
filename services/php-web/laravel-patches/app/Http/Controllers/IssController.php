@@ -40,7 +40,11 @@ class IssController extends Controller
     public function trend(Request $request)
     {
         try {
-            $limit = $request->query('limit', 240);
+            $validated = $request->validate([
+                'limit' => 'nullable|integer|min:1|max:1000',
+            ]);
+
+            $limit = $validated['limit'] ?? 240;
             $data = $this->issService->getTrend($limit);
             return response()->json($data);
         } catch (\Exception $e) {

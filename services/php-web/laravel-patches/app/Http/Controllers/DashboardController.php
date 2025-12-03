@@ -36,10 +36,14 @@ class DashboardController extends Controller
 
     public function downloadTelemetryCsv(Request $request)
     {
-        $sourceFile = $request->query('source_file');
-        if (!$sourceFile) {
-            abort(400, 'Source file parameter is required');
-        }
+        $validated = $request->validate([
+            'source_file' => 'required|string|max:255',
+        ]);
+
+        $sourceFile = $validated['source_file'];
+
+        // Sanitize source_file to prevent path traversal
+        $sourceFile = str_replace(['/', '\\', '..'], '', $sourceFile);
 
         $telemetry = $this->telemetryService->getTelemetryBySourceFile($sourceFile);
 

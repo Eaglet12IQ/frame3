@@ -30,7 +30,15 @@ class JwstController extends Controller
     public function selectObservation(Request $request)
     {
         try {
-            $data = $request->only(['obs_id', 'program', 'suffix', 'inst', 'url', 'link', 'caption']);
+            $data = $request->validate([
+                'obs_id' => 'required|string|max:255',
+                'program' => 'nullable|string|max:255',
+                'suffix' => 'nullable|string|max:255',
+                'inst' => 'nullable|string|max:255',
+                'url' => 'nullable|url',
+                'link' => 'nullable|url',
+                'caption' => 'nullable|string|max:1000',
+            ]);
 
             $success = $this->jwstService->selectObservation($data);
 
@@ -56,9 +64,16 @@ class JwstController extends Controller
     public function feed(Request $r)
     {
         try {
-            $params = $r->query();
+            $validated = $r->validate([
+                'source' => 'nullable|string|in:jpg,suffix,program',
+                'suffix' => 'nullable|string|max:50',
+                'program' => 'nullable|integer|min:1',
+                'instrument' => 'nullable|string|in:NIRCam,MIRI,NIRISS,NIRSpec,FGS',
+                'page' => 'nullable|integer|min:1',
+                'perPage' => 'nullable|integer|min:1|max:100',
+            ]);
 
-            $dto = $this->jwstService->getFeed($params);
+            $dto = $this->jwstService->getFeed($validated);
 
             return response()->json($dto->toArray());
         } catch (\Exception $e) {

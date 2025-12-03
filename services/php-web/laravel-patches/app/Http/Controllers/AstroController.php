@@ -22,8 +22,13 @@ class AstroController extends Controller
     public function events(Request $r)
     {
         try {
-            $params = $r->query();
-            $dto = $this->astroService->getEvents($params);
+            $validated = $r->validate([
+                'date' => 'nullable|date',
+                'limit' => 'nullable|integer|min:1|max:100',
+                'type' => 'nullable|string|max:50',
+            ]);
+
+            $dto = $this->astroService->getEvents($validated);
             return response()->json($dto->toArray());
         } catch (\Exception $e) {
             return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
