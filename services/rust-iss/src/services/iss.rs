@@ -115,6 +115,30 @@ impl<R: IssRepo + Sync + Clone> IssService for IssServiceImpl<R> {
         })
     }
 
+    async fn get_iss_trend_points(&self, limit: usize) -> crate::services::Result<Vec<crate::services::IssPoint>> {
+        let iss_data_list = self.repo
+            .get_iss_data_range(limit as i64)
+            .await
+            .map_err(|e| ServiceError::RepositoryError(e.to_string()))?;
+
+        let mut points = Vec::new();
+        for data in iss_data_list.into_iter().rev() {
+            if let (Some(lat), Some(lon)) = (
+                extract_numeric_field(&data.payload, "latitude"),
+                extract_numeric_field(&data.payload, "longitude"),
+            ) {
+                points.push(crate::services::IssPoint {
+                    lat,
+                    lon,
+                    at: data.fetched_at,
+                    velocity: extract_numeric_field(&data.payload, "velocity"),
+                    altitude: extract_numeric_field(&data.payload, "altitude"),
+                });
+            }
+        }
+        Ok(points)
+    }
+
     async fn trigger_iss_fetch(&self) -> crate::services::Result<IssData> {
         // Default ISS API URL
         let default_url = "https://api.wheretheiss.at/v1/satellites/25544";

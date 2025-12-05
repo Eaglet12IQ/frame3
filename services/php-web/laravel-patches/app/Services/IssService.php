@@ -22,4 +22,9 @@ class IssService
     {
         return $this->client->getJson('iss/trend', ['limit' => $limit]);
     }
+
+    public function getTrendAnalysis(): array
+    {
+        return $this->client->getJson('iss/trend/analysis');
+    }
 }

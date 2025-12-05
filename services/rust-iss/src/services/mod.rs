@@ -40,7 +40,18 @@ pub trait IssService {
     async fn fetch_and_store_iss_data(&self, url: &str) -> Result<IssData>;
     async fn get_latest_iss_data(&self) -> Result<Option<IssData>>;
     async fn get_iss_trend_analysis(&self) -> Result<IssTrend>;
+    async fn get_iss_trend_points(&self, limit: usize) -> Result<Vec<IssPoint>>;
     async fn trigger_iss_fetch(&self) -> Result<IssData>;
+}
+
+/// ISS Point for trend visualization
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IssPoint {
+    pub lat: f64,
+    pub lon: f64,
+    pub at: DateTime<Utc>,
+    pub velocity: Option<f64>,
+    pub altitude: Option<f64>,
 }
 
 /// OSDR Service trait

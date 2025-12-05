@@ -51,4 +51,14 @@ class IssController extends Controller
             return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
         }
     }
+
+    public function trendAnalysis()
+    {
+        try {
+            $data = $this->issService->getTrendAnalysis();
+            return response()->json($data);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 500);
+        }
+    }
 }

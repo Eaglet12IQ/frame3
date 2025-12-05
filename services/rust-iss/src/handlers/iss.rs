@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tracing::{error, info, instrument};
 
-use crate::{AppState, domain::IssData, services::IssService, handlers::ApiError};
+use crate::{AppState, domain::IssData, services::{IssService, IssPoint}, handlers::ApiError};
 
 #[derive(Serialize)]
 pub struct IssResponse {
@@ -29,6 +29,11 @@ pub struct Trend {
     pub from_lon: Option<f64>,
     pub to_lat: Option<f64>,
     pub to_lon: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct IssTrendResponse {
+    pub points: Vec<IssPoint>,
 }
 
 #[instrument(skip(st))]
@@ -65,7 +70,20 @@ pub async fn trigger_iss(State(st): State<AppState>) -> Result<Json<Value>, ApiE
 }
 
 #[instrument(skip(st))]
-pub async fn iss_trend(State(st): State<AppState>) -> Result<Json<Trend>, ApiError> {
+pub async fn iss_trend(State(st): State<AppState>) -> Result<Json<IssTrendResponse>, ApiError> {
+    info!("Retrieving ISS trend points");
+    let points = st.iss_service.get_iss_trend_points(240).await
+        .map_err(|e| {
+            error!("Failed to get ISS trend points: {:?}", e);
+            ApiError::internal_error("Failed to retrieve ISS trend points")
+        })?;
+
+    info!("Retrieved {} ISS trend points", points.len());
+    Ok(Json(IssTrendResponse { points }))
+}
+
+#[instrument(skip(st))]
+pub async fn iss_trend_analysis(State(st): State<AppState>) -> Result<Json<Trend>, ApiError> {
     info!("Calculating ISS trend analysis");
     let trend = st.iss_service.get_iss_trend_analysis().await
         .map_err(|e| {

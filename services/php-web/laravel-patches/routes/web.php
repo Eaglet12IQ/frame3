@@ -16,6 +16,7 @@ Route::middleware([\App\Http\Middleware\LoggingMiddleware::class, \App\Http\Midd
     // ISS API endpoints
     Route::get('/api/iss/last',  [\App\Http\Controllers\IssController::class, 'last']);
     Route::get('/api/iss/trend', [\App\Http\Controllers\IssController::class, 'trend']);
+    Route::get('/api/iss/trend/analysis', [\App\Http\Controllers\IssController::class, 'trendAnalysis']);
 
     // JWST галерея (JSON)
     Route::get('/api/jwst/feed', [\App\Http\Controllers\JwstController::class, 'feed']);

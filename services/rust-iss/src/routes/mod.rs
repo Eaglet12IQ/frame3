@@ -33,6 +33,7 @@ pub fn iss_routes() -> Router<AppState> {
         .route("/last", get(handlers::last_iss))
         .route("/fetch", get(handlers::trigger_iss))
         .route("/iss/trend", get(handlers::iss_trend))
+        .route("/iss/trend/analysis", get(handlers::iss_trend_analysis))
 }
 
 pub fn osdr_routes() -> Router<AppState> {

@@ -9,17 +9,19 @@
       <div class="card shadow-sm fade-in">
         <div class="card-body">
           <h5 class="card-title">Последний снимок</h5>
-          @if(!empty($last['payload']))
-            <ul class="list-group">
-              <li class="list-group-item">Широта {{ $last['payload']['latitude'] ?? '—' }}</li>
-              <li class="list-group-item">Долгота {{ $last['payload']['longitude'] ?? '—' }}</li>
-              <li class="list-group-item">Высота км {{ $last['payload']['altitude'] ?? '—' }}</li>
-              <li class="list-group-item">Скорость км/ч {{ $last['payload']['velocity'] ?? '—' }}</li>
-              <li class="list-group-item">Время {{ $last['fetched_at'] ?? '—' }}</li>
-            </ul>
-          @else
-            <div class="text-muted">нет данных</div>
-          @endif
+          <div id="last-snapshot">
+            @if(!empty($last['payload']))
+              <ul class="list-group">
+                <li class="list-group-item">Широта <span id="last-lat">{{ $last['payload']['latitude'] ?? '—' }}</span></li>
+                <li class="list-group-item">Долгота <span id="last-lon">{{ $last['payload']['longitude'] ?? '—' }}</span></li>
+                <li class="list-group-item">Высота км <span id="last-alt">{{ $last['payload']['altitude'] ?? '—' }}</span></li>
+                <li class="list-group-item">Скорость км/ч <span id="last-vel">{{ $last['payload']['velocity'] ?? '—' }}</span></li>
+                <li class="list-group-item">Время <span id="last-time">{{ $last['fetched_at'] ?? '—' }}</span></li>
+              </ul>
+            @else
+              <div class="text-muted">нет данных</div>
+            @endif
+          </div>
         </div>
       </div>
     </div>
@@ -28,16 +30,18 @@
       <div class="card shadow-sm slide-in">
         <div class="card-body">
           <h5 class="card-title">Тренд движения</h5>
-          @if(!empty($trend))
-            <ul class="list-group">
-              <li class="list-group-item">Движение {{ ($trend['movement'] ?? false) ? 'да' : 'нет' }}</li>
-              <li class="list-group-item">Смещение км {{ number_format($trend['delta_km'] ?? 0, 3, '.', ' ') }}</li>
-              <li class="list-group-item">Интервал сек {{ $trend['dt_sec'] ?? 0 }}</li>
-              <li class="list-group-item">Скорость км/ч {{ $trend['velocity_kmh'] ?? '—' }}</li>
-            </ul>
-          @else
-            <div class="text-muted">нет данных</div>
-          @endif
+          <div id="trend-data">
+            @if(!empty($trend))
+              <ul class="list-group">
+                <li class="list-group-item">Движение <span id="trend-movement">{{ ($trend['movement'] ?? false) ? 'да' : 'нет' }}</span></li>
+                <li class="list-group-item">Смещение км <span id="trend-delta">{{ number_format($trend['delta_km'] ?? 0, 3, '.', ' ') }}</span></li>
+                <li class="list-group-item">Интервал сек <span id="trend-dt">{{ $trend['dt_sec'] ?? 0 }}</span></li>
+                <li class="list-group-item">Скорость км/ч <span id="trend-vel">{{ $trend['velocity_kmh'] ?? '—' }}</span></li>
+              </ul>
+            @else
+              <div class="text-muted">нет данных</div>
+            @endif
+          </div>
         </div>
       </div>
     </div>
@@ -98,8 +102,34 @@ document.addEventListener('DOMContentLoaded', async function () {
         altChart.update();
       } catch(e) {}
     }
+
+    async function loadLatestData() {
+      try {
+        // Load latest ISS data
+        const lastResp = await fetch('/api/iss/last');
+        const lastData = await lastResp.json();
+        if (lastData.payload) {
+          document.getElementById('last-lat').textContent = lastData.payload.latitude || '—';
+          document.getElementById('last-lon').textContent = lastData.payload.longitude || '—';
+          document.getElementById('last-alt').textContent = lastData.payload.altitude || '—';
+          document.getElementById('last-vel').textContent = lastData.payload.velocity || '—';
+          document.getElementById('last-time').textContent = lastData.fetched_at || '—';
+        }
+
+        // Load trend analysis
+        const trendResp = await fetch('/api/iss/trend/analysis');
+        const trendData = await trendResp.json();
+        document.getElementById('trend-movement').textContent = trendData.movement ? 'да' : 'нет';
+        document.getElementById('trend-delta').textContent = Number(trendData.delta_km || 0).toFixed(3);
+        document.getElementById('trend-dt').textContent = trendData.dt_sec || 0;
+        document.getElementById('trend-vel').textContent = trendData.velocity_kmh || '—';
+      } catch(e) {}
+    }
+
     loadTrend();
+    loadLatestData();
     setInterval(loadTrend, 15000);
+    setInterval(loadLatestData, 15000);
   }
 });
 </script>
