@@ -23,9 +23,12 @@ class AstroController extends Controller
     {
         try {
             $validated = $r->validate([
-                'date' => 'nullable|date',
-                'limit' => 'nullable|integer|min:1|max:100',
-                'type' => 'nullable|string|max:50',
+                'lat' => 'nullable|numeric',
+                'lon' => 'nullable|numeric',
+                'elevation' => 'nullable|numeric',
+                'from_date' => 'nullable|date',
+                'to_date' => 'nullable|date',
+                'time' => 'nullable|string',
             ]);
 
             $dto = $this->astroService->getEvents($validated);

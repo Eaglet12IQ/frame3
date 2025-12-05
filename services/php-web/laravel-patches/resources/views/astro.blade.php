@@ -8,19 +8,14 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h5 class="card-title m-0 fade-in">Астрономические события (AstronomyAPI)</h5>
-          <form id="astroForm" class="row g-2 align-items-center">
-            <div class="col-auto">
-              <input type="number" step="0.0001" class="form-control form-control-sm" name="lat" value="55.7558" placeholder="lat">
-            </div>
-            <div class="col-auto">
-              <input type="number" step="0.0001" class="form-control form-control-sm" name="lon" value="37.6176" placeholder="lon">
-            </div>
-            <div class="col-auto">
-              <input type="number" step="0.1" class="form-control form-control-sm" name="elevation" value="7" style="width:90px" title="высота (м)">
-            </div>
-            <div class="col-auto">
-              <button class="btn btn-sm btn-primary" type="submit">Показать</button>
-            </div>
+          <form id="astroForm" class="d-flex gap-2 align-items-center flex-nowrap">
+            <input type="number" step="0.0001" class="form-control form-control-sm" name="lat" value="65.9558" placeholder="lat" title="широта">
+            <input type="number" step="0.0001" class="form-control form-control-sm" name="lon" value="37.6171" placeholder="lon" title="долгота">
+            <input type="number" step="0.1" class="form-control form-control-sm" name="elevation" value="7" style="width:90px" title="высота (м)">
+            <input type="date" class="form-control form-control-sm" name="from_date" value="2025-11-29" placeholder="from_date" title="дата начала">
+            <input type="date" class="form-control form-control-sm" name="to_date" value="2026-11-29" placeholder="to_date" title="дата окончания">
+            <input type="time" class="form-control form-control-sm" name="time" value="00:00:00" placeholder="time" title="время">
+            <button class="btn btn-sm btn-primary" type="submit">Показать</button>
           </form>
         </div>
 
@@ -130,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // автозагрузка
-  load({lat: form.lat.value, lon: form.lon.value, days: form.days.value});
+  load({lat: form.lat.value, lon: form.lon.value, elevation: form.elevation.value, from_date: form.from_date.value, to_date: form.to_date.value, time: form.time.value});
 
   // Sorting and filtering functionality
   let sortDirection = {};
