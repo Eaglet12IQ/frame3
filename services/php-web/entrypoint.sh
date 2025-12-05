@@ -26,6 +26,16 @@ fi
 chown -R www-data:www-data "$APP_DIR"
 chmod -R 775 "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
 
+# Создаём директорию для логов, если её нет
+mkdir -p "$APP_DIR/storage/logs"
+chown -R www-data:www-data "$APP_DIR/storage/logs"
+chmod -R 775 "$APP_DIR/storage/logs"
+
+# Создаём файл логов, если его нет
+touch "$APP_DIR/storage/logs/laravel.log"
+chown www-data:www-data "$APP_DIR/storage/logs/laravel.log"
+chmod 664 "$APP_DIR/storage/logs/laravel.log"
+
 echo "[php] running migrations (if any)"
 php "$APP_DIR/artisan" migrate --force || true
 

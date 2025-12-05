@@ -27,6 +27,11 @@ class DashboardService
         $telemetry = $this->telemetryService->getLatestTelemetry(10)->toArray();
         $cmsBlock = $this->cmsBlockRepository->getActiveBlockBySlug('dashboard_experiment');
 
+        // Sanitize CMS block content to prevent XSS
+        if ($cmsBlock) {
+            $cmsBlock->content = $this->sanitizeHtml($cmsBlock->content);
+        }
+
         $trend = []; // Front-end will fetch /api/iss/trend via nginx proxy
         $jw_gallery = []; // Not needed server-side
         $jw_observation_raw = [];
@@ -51,5 +56,12 @@ class DashboardService
             $telemetry,
             $cmsBlock
         );
+    }
+
+    private function sanitizeHtml(string $html): string
+    {
+        // Allow basic HTML tags, remove potentially dangerous ones
+        $allowedTags = '<p><br><strong><em><u><h1><h2><h3><h4><h5><h6><ul><ol><li><a><img>';
+        return strip_tags($html, $allowedTags);
     }
 }
