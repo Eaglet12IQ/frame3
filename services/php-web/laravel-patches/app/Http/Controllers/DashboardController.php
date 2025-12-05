@@ -17,14 +17,16 @@ class DashboardController extends Controller
         $this->telemetryService = $telemetryService;
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $dto = $this->dashboardService->getDashboardData();
         $data = $dto->toArray();
 
+        $telemetry = $this->telemetryService->getLatestTelemetryPaginated(10);
+
         return view('dashboard', [
             'cms_block' => $data['cms_block'],
-            'telemetry' => $data['telemetry'],
+            'telemetry' => $telemetry,
         ]);
     }
 

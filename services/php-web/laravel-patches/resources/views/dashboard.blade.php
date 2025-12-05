@@ -56,6 +56,28 @@
           @endif
         </tbody>
       </table>
+      @if ($telemetry->hasPages())
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <div class="text-muted">
+            Showing {{ $telemetry->firstItem() }} to {{ $telemetry->lastItem() }} of {{ $telemetry->total() }} results
+          </div>
+          <nav aria-label="Pagination">
+            <ul class="pagination mb-0">
+              @if ($telemetry->onFirstPage())
+                <li class="page-item disabled"><span class="page-link">« Previous</span></li>
+              @else
+                <li class="page-item"><a class="page-link" href="{{ $telemetry->previousPageUrl() }}">« Previous</a></li>
+              @endif
+
+              @if ($telemetry->hasMorePages())
+                <li class="page-item"><a class="page-link" href="{{ $telemetry->nextPageUrl() }}">Next »</a></li>
+              @else
+                <li class="page-item disabled"><span class="page-link">Next »</span></li>
+              @endif
+            </ul>
+          </nav>
+        </div>
+      @endif
     </div>
   </div>
 </div>

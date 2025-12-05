@@ -21,7 +21,7 @@
         </tr>
       </thead>
       <tbody id="osdrBody">
-      @forelse(array_slice($items, 0, 50) as $row)
+      @forelse($osdr_items as $row)
         <tr class="fade-in">
           <td>{{ $row['id'] }}</td>
           <td>{{ $row['dataset_id'] ?? '—' }}</td>
@@ -49,6 +49,28 @@
       @endforelse
       </tbody>
     </table>
+    @if ($osdr_items->hasPages())
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <div class="text-muted">
+          Showing {{ $osdr_items->firstItem() }} to {{ $osdr_items->lastItem() }} of {{ $osdr_items->total() }} results
+        </div>
+        <nav aria-label="Pagination">
+          <ul class="pagination mb-0">
+            @if ($osdr_items->onFirstPage())
+              <li class="page-item disabled"><span class="page-link">« Previous</span></li>
+            @else
+              <li class="page-item"><a class="page-link" href="{{ $osdr_items->previousPageUrl() }}">« Previous</a></li>
+            @endif
+
+            @if ($osdr_items->hasMorePages())
+              <li class="page-item"><a class="page-link" href="{{ $osdr_items->nextPageUrl() }}">Next »</a></li>
+            @else
+              <li class="page-item disabled"><span class="page-link">Next »</span></li>
+            @endif
+          </ul>
+        </nav>
+      </div>
+    @endif
   </div>
 </div>
 

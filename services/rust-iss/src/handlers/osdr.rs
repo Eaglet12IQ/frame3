@@ -22,17 +22,30 @@ pub async fn osdr_sync(State(st): State<AppState>) -> Result<Json<Value>, ApiErr
 }
 
 #[instrument(skip(st))]
-pub async fn osdr_list(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
-    let limit =  std::env::var("OSDR_LIST_LIMIT").ok()
-        .and_then(|s| s.parse::<i64>().ok()).unwrap_or(20);
+pub async fn osdr_list(
+    State(st): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let limit = 20;
 
-    info!("Retrieving OSDR items list with limit: {}", limit);
+    let page = params.get("page")
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(1);
+
+    let offset = (page - 1) * limit;
+
+    info!("Retrieving OSDR items list with limit: {}, page: {}, offset: {}", limit, page, offset);
+
+    // Get total count for pagination
+    let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM osdr_items")
+        .fetch_one(&st.pool).await?;
+
     let rows = sqlx::query(
         "SELECT id, dataset_id, title, status, updated_at, inserted_at, raw
          FROM osdr_items
          ORDER BY inserted_at DESC
-         LIMIT $1"
-    ).bind(limit).fetch_all(&st.pool).await?;
+         LIMIT $1 OFFSET $2"
+    ).bind(limit).bind(offset).fetch_all(&st.pool).await?;
 
     let out: Vec<Value> = rows.into_iter().map(|r| {
         serde_json::json!({

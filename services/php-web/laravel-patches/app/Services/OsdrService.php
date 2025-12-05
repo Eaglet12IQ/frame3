@@ -24,6 +24,33 @@ class OsdrService
         return new OsdrListDto($items, $this->client->getBaseUrl() . '/osdr/list?limit=' . $limit);
     }
 
+    public function getOsdrListPaginated(int $perPage = 20)
+    {
+        // Fetch all items to get accurate flattened count and pagination
+        $allData = $this->client->getJson('osdr/list', ['limit' => 1000]); // Large limit to get all
+        $allItems = $allData['items'] ?? [];
+        $allFlattened = $this->flattenOsdr($allItems);
+        $total = count($allFlattened);
+
+        // Calculate offset for current page
+        $currentPage = request('page', 1);
+        $offset = ($currentPage - 1) * $perPage;
+
+        // Slice the flattened items for current page
+        $items = array_slice($allFlattened, $offset, $perPage);
+
+        // Create a paginator manually
+        $paginator = new \Illuminate\Pagination\LengthAwarePaginator(
+            $items,
+            $total,
+            $perPage,
+            $currentPage,
+            ['path' => request()->url(), 'pageName' => 'page']
+        );
+
+        return $paginator;
+    }
+
     /** Преобразует данные вида {"OSD-1": {...}, "OSD-2": {...}} в плоский список */
     private function flattenOsdr(array $items): array
     {

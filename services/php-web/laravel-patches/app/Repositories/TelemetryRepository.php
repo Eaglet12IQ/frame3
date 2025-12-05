@@ -20,6 +20,14 @@ class TelemetryRepository extends BaseRepository
             ->get();
     }
 
+    public function getLatestTelemetryPaginated(int $perPage = 10)
+    {
+        return $this->model
+            ->select('recorded_at', 'voltage', 'temp', 'source_file', 'is_valid')
+            ->orderBy('recorded_at', 'desc')
+            ->paginate($perPage);
+    }
+
     public function getTelemetryBySourceFile(string $sourceFile)
     {
         return $this->model
@@ -27,5 +35,14 @@ class TelemetryRepository extends BaseRepository
             ->where('source_file', $sourceFile)
             ->orderBy('recorded_at', 'desc')
             ->get();
+    }
+
+    public function getTelemetryBySourceFilePaginated(string $sourceFile, int $perPage = 100)
+    {
+        return $this->model
+            ->select('recorded_at', 'voltage', 'temp', 'source_file', 'is_valid')
+            ->where('source_file', $sourceFile)
+            ->orderBy('recorded_at', 'desc')
+            ->paginate($perPage);
     }
 }
