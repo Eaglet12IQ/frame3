@@ -1,43 +1,32 @@
 use async_trait::async_trait;
 use serde_json::Value;
-use std::time::Duration;
 
 use crate::domain::*;
 use crate::repo::*;
 use crate::services::*;
+use crate::clients::{IssClient, Result as ClientResult, ClientError};
 
 /// Implementation of ISS Service
 #[derive(Clone)]
-pub struct IssServiceImpl<R: IssRepo + Clone> {
+pub struct IssServiceImpl<R: IssRepo + Clone, C: IssClient + Clone> {
     repo: R,
+    client: C,
 }
 
-impl<R: IssRepo + Clone> IssServiceImpl<R> {
-    pub fn new(repo: R) -> Self {
-        Self { repo }
+impl<R: IssRepo + Clone, C: IssClient + Clone> IssServiceImpl<R, C> {
+    pub fn new(repo: R, client: C) -> Self {
+        Self { repo, client }
     }
 }
 
 #[async_trait]
-impl<R: IssRepo + Sync + Clone> IssService for IssServiceImpl<R> {
+impl<R: IssRepo + Sync + Clone, C: IssClient + Clone + Sync> IssService for IssServiceImpl<R, C> {
     async fn fetch_and_store_iss_data(&self, url: &str) -> crate::services::Result<IssData> {
-        // Create HTTP client with timeout
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(20))
-            .build()
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to create HTTP client: {}", e)))?;
-
-        // Fetch data from ISS API
-        let response = client
-            .get(url)
-            .send()
+        // Fetch data from ISS API using the client
+        let json: Value = self.client
+            .fetch_iss_position_by_url(url)
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("ISS API request failed: {}", e)))?;
-
-        let json: Value = response
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse ISS response: {}", e)))?;
 
         // Create domain model and validate
         let iss_data = IssData::new(url.to_string(), json);
@@ -142,7 +131,26 @@ impl<R: IssRepo + Sync + Clone> IssService for IssServiceImpl<R> {
     async fn trigger_iss_fetch(&self) -> crate::services::Result<IssData> {
         // Default ISS API URL
         let default_url = "https://api.wheretheiss.at/v1/satellites/25544";
-        self.fetch_and_store_iss_data(default_url).await
+
+        // Fetch data from ISS API using the client
+        let json: Value = self.client
+            .fetch_iss_position()
+            .await
+            .map_err(|e| ServiceError::ExternalApiError(format!("ISS API request failed: {}", e)))?;
+
+        // Create domain model and validate
+        let iss_data = IssData::new(default_url.to_string(), json);
+        iss_data
+            .validate()
+            .map_err(|e| ServiceError::ValidationError(e.to_string()))?;
+
+        // Store in repository
+        self.repo
+            .insert_iss_data(&iss_data)
+            .await
+            .map_err(|e| ServiceError::RepositoryError(e.to_string()))?;
+
+        Ok(iss_data)
     }
 }
 

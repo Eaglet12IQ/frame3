@@ -33,9 +33,9 @@ use config::*;
 struct AppState {
     pool: PgPool,
     redis_repo: Option<RedisRepos>,
-    iss_service: IssServiceImpl<PgRepos>,
-    osdr_service: OsdrServiceImpl<PgRepos>,
-    cache_service: CacheServiceImpl<PgRepos>,
+    iss_service: IssServiceImpl<PgRepos, IssClientImpl>,
+    osdr_service: OsdrServiceImpl<PgRepos, NasaClientImpl>,
+    cache_service: CacheServiceImpl<PgRepos, NasaClientImpl, SpaceXClientImpl>,
     nasa_client: NasaClientImpl,
     iss_client: IssClientImpl,
     spacex_client: SpaceXClientImpl,
@@ -82,21 +82,21 @@ async fn main() -> anyhow::Result<()> {
     let osdr_repo = PgRepos::new(pool.clone());
     let cache_repo = PgRepos::new(pool.clone());
 
-    // Initialize services with dependency injection
-    let iss_service = IssServiceImpl::new(iss_repo);
-    let osdr_service = OsdrServiceImpl::new(osdr_repo);
-    let mut cache_service = CacheServiceImpl::new(cache_repo);
-
-    // Add Redis support to cache service if available
-    if let Some(ref redis_repo) = redis_repo {
-        cache_service = cache_service.with_redis(redis_repo.clone());
-    }
-
     // Initialize HTTP clients
     let http_config = HttpClientConfig::default();
     let nasa_client = NasaClientImpl::new(http_config.clone());
     let iss_client = IssClientImpl::new(http_config.clone());
     let spacex_client = SpaceXClientImpl::new(http_config.clone());
+
+    // Initialize services with dependency injection
+    let iss_service = IssServiceImpl::new(iss_repo, iss_client.clone());
+    let osdr_service = OsdrServiceImpl::new(osdr_repo, nasa_client.clone());
+    let mut cache_service = CacheServiceImpl::new(cache_repo, nasa_client.clone(), spacex_client.clone());
+
+    // Add Redis support to cache service if available
+    if let Some(ref redis_repo) = redis_repo {
+        cache_service = cache_service.with_redis(redis_repo.clone());
+    }
 
     // Create application state
     let state = AppState {
@@ -105,9 +105,9 @@ async fn main() -> anyhow::Result<()> {
         iss_service,
         osdr_service,
         cache_service,
-        nasa_client,
-        iss_client,
-        spacex_client,
+        nasa_client: nasa_client.clone(),
+        iss_client: iss_client.clone(),
+        spacex_client: spacex_client.clone(),
         config: config.clone(),
     };
 

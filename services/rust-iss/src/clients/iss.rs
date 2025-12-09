@@ -35,6 +35,10 @@ impl IssClient for IssClientImpl {
         let url = format!("{}/v1/satellites/25544", self.base_url);
         self.http_client.get_with_retry(&url, &[]).await
     }
+
+    async fn fetch_iss_position_by_url(&self, url: &str) -> ClientResult<Value> {
+        self.http_client.get_with_retry(url, &[]).await
+    }
 }
 
 #[cfg(test)]

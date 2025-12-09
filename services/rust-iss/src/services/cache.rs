@@ -6,18 +6,23 @@ use std::time::Duration;
 use crate::domain::*;
 use crate::repo::{RepoError, IssRepo, OsdrRepo, CacheRepo};
 use crate::services::*;
+use crate::clients::{NasaClient, SpaceXClient, Result as ClientResult};
 
 /// Implementation of Cache Service
 #[derive(Clone)]
-pub struct CacheServiceImpl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> {
+pub struct CacheServiceImpl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone, N: NasaClient + Clone + Sync, S: SpaceXClient + Clone + Sync> {
     repo: R,
+    nasa_client: N,
+    spacex_client: S,
     redis_repo: Option<crate::repo::RedisRepos>,
 }
 
-impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
-    pub fn new(repo: R) -> Self {
+impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone, N: NasaClient + Clone + Sync, S: SpaceXClient + Clone + Sync> CacheServiceImpl<R, N, S> {
+    pub fn new(repo: R, nasa_client: N, spacex_client: S) -> Self {
         Self {
             repo,
+            nasa_client,
+            spacex_client,
             redis_repo: None,
         }
     }
@@ -29,31 +34,12 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
 }
 
 #[async_trait]
-impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheServiceImpl<R> {
+impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone, N: NasaClient + Clone + Sync, S: SpaceXClient + Clone + Sync> CacheService for CacheServiceImpl<R, N, S> {
     async fn fetch_and_cache_apod(&self, api_key: Option<&str>) -> Result<SpaceCache> {
-        let url = "https://api.nasa.gov/planetary/apod";
-        let client = create_http_client()?;
-
-        let mut request = client.get(url).query(&[("thumbs", "true")]);
-        if let Some(key) = api_key {
-            request = request.query(&[("api_key", key)]);
-        }
-
-        let response = request
-            .send()
+        let json = self.nasa_client
+            .fetch_apod(api_key)
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("APOD API request failed: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ServiceError::ExternalApiError(format!(
-                "APOD API returned status: {}", response.status()
-            )));
-        }
-
-        let json: Value = response
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse APOD response: {}", e)))?;
 
         let json_str = serde_json::to_string(&json).unwrap();
 
@@ -78,33 +64,11 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
     async fn fetch_and_cache_neo_feed(&self, api_key: Option<&str>) -> Result<SpaceCache> {
         let today = Utc::now().date_naive();
         let start_date = today - chrono::Days::new(2);
-        let url = "https://api.nasa.gov/neo/rest/v1/feed";
-        let client = create_http_client()?;
 
-        let mut request = client.get(url).query(&[
-            ("start_date", start_date.to_string()),
-            ("end_date", today.to_string()),
-        ]);
-
-        if let Some(key) = api_key {
-            request = request.query(&[("api_key", key)]);
-        }
-
-        let response = request
-            .send()
+        let json = self.nasa_client
+            .fetch_neo_feed(&start_date.to_string(), &today.to_string(), api_key)
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("NEO API request failed: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ServiceError::ExternalApiError(format!(
-                "NEO API returned status: {}", response.status()
-            )));
-        }
-
-        let json: Value = response
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse NEO response: {}", e)))?;
 
         let json_str = serde_json::to_string(&json).unwrap();
 
@@ -143,25 +107,10 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
     }
 
     async fn fetch_and_cache_spacex_next(&self) -> Result<SpaceCache> {
-        let url = "https://api.spacexdata.com/v4/launches/next";
-        let client = create_http_client()?;
-
-        let response = client
-            .get(url)
-            .send()
+        let json = self.spacex_client
+            .fetch_next_launch()
             .await
             .map_err(|e| ServiceError::ExternalApiError(format!("SpaceX API request failed: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ServiceError::ExternalApiError(format!(
-                "SpaceX API returned status: {}", response.status()
-            )));
-        }
-
-        let json: Value = response
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse SpaceX response: {}", e)))?;
 
         let json_str = serde_json::to_string(&json).unwrap();
 
@@ -280,25 +229,15 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheService for CacheSer
     }
 }
 
-impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
+impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone, N: NasaClient + Clone + Sync, S: SpaceXClient + Clone + Sync> CacheServiceImpl<R, N, S> {
     /// Fetch DONKI FLR data
     pub async fn fetch_donki_flr(&self, api_key: Option<&str>) -> Result<SpaceCache> {
         let (from, to) = get_last_days_range(5);
-        let url = "https://api.nasa.gov/DONKI/FLR";
-        let client = create_http_client()?;
 
-        let mut request = client.get(url).query(&[("startDate", from), ("endDate", to)]);
-        if let Some(key) = api_key {
-            request = request.query(&[("api_key", key)]);
-        }
-
-        let json: Value = request
-            .send()
+        let json = self.nasa_client
+            .fetch_donki_flr(&from, &to, api_key)
             .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("DONKI FLR request failed: {}", e)))?
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse DONKI FLR response: {}", e)))?;
+            .map_err(|e| ServiceError::ExternalApiError(format!("DONKI FLR request failed: {}", e)))?;
 
         let cache_entry = SpaceCache::new("flr".to_string(), json.clone());
         cache_entry
@@ -321,21 +260,11 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
     /// Fetch DONKI CME data
     pub async fn fetch_donki_cme(&self, api_key: Option<&str>) -> Result<SpaceCache> {
         let (from, to) = get_last_days_range(5);
-        let url = "https://api.nasa.gov/DONKI/CME";
-        let client = create_http_client()?;
 
-        let mut request = client.get(url).query(&[("startDate", from), ("endDate", to)]);
-        if let Some(key) = api_key {
-            request = request.query(&[("api_key", key)]);
-        }
-
-        let json: Value = request
-            .send()
+        let json = self.nasa_client
+            .fetch_donki_cme(&from, &to, api_key)
             .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("DONKI CME request failed: {}", e)))?
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse DONKI CME response: {}", e)))?;
+            .map_err(|e| ServiceError::ExternalApiError(format!("DONKI CME request failed: {}", e)))?;
 
         let cache_entry = SpaceCache::new("cme".to_string(), json);
         cache_entry
@@ -351,13 +280,7 @@ impl<R: CacheRepo + IssRepo + OsdrRepo + Sync + Clone> CacheServiceImpl<R> {
     }
 }
 
-/// Create HTTP client with default timeout
-fn create_http_client() -> crate::services::Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| ServiceError::ExternalApiError(format!("Failed to create HTTP client: {}", e)))
-}
+
 
 /// Get date range for last N days
 fn get_last_days_range(days: i64) -> (String, String) {

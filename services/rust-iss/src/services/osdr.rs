@@ -6,45 +6,29 @@ use std::time::Duration;
 use crate::domain::*;
 use crate::repo::*;
 use crate::services::*;
+use crate::clients::NasaClient;
 
 /// Implementation of OSDR Service
 #[derive(Clone)]
-pub struct OsdrServiceImpl<R: OsdrRepo + Clone> {
+pub struct OsdrServiceImpl<R: OsdrRepo + Clone, C: NasaClient + Clone> {
     repo: R,
+    client: C,
 }
 
-impl<R: OsdrRepo + Clone> OsdrServiceImpl<R> {
-    pub fn new(repo: R) -> Self {
-        Self { repo }
+impl<R: OsdrRepo + Clone, C: NasaClient + Clone> OsdrServiceImpl<R, C> {
+    pub fn new(repo: R, client: C) -> Self {
+        Self { repo, client }
     }
 }
 
 #[async_trait]
-impl<R: OsdrRepo + Clone + Sync> OsdrService for OsdrServiceImpl<R> {
-    async fn sync_osdr_data(&self, api_url: &str) -> crate::services::Result<usize> {
-        // Create HTTP client with timeout
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to create HTTP client: {}", e)))?;
-
-        // Fetch data from OSDR API
-        let resp = client
-            .get(api_url)
-            .send()
+impl<R: OsdrRepo + Clone + Sync, C: NasaClient + Clone + Sync> OsdrService for OsdrServiceImpl<R, C> {
+    async fn sync_osdr_data(&self, _api_url: &str) -> crate::services::Result<usize> {
+        // Fetch data from OSDR API using NasaClient
+        let json: Value = self.client
+            .fetch_osdr_datasets()
             .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("HTTP request failed: {}", e)))?;
-
-        if !resp.status().is_success() {
-            return Err(ServiceError::ExternalApiError(format!(
-                "OSDR API returned status: {}", resp.status()
-            )));
-        }
-
-        let json: Value = resp
-            .json()
-            .await
-            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to parse JSON response: {}", e)))?;
+            .map_err(|e| ServiceError::ExternalApiError(format!("Failed to fetch OSDR data: {}", e)))?;
 
         // Parse the response - handle different possible formats
         let items = parse_osdr_response(json)?;
@@ -208,10 +192,45 @@ mod tests {
         assert!(item.updated_at.is_some());
     }
 
+    // Mock client for testing
+    #[derive(Clone)]
+    struct MockNasaClient;
+
+    #[async_trait]
+    impl NasaClient for MockNasaClient {
+        async fn fetch_osdr_datasets(&self) -> ClientResult<Value> {
+            Ok(serde_json::json!([{"dataset_id": "1", "title": "Test"}]))
+        }
+
+        async fn fetch_apod(&self, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!({"title": "Test APOD"}))
+        }
+
+        async fn fetch_neo_feed(&self, _start_date: &str, _end_date: &str, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!({"near_earth_objects": {}}))
+        }
+
+        async fn fetch_donki_flr(&self, _start_date: &str, _end_date: &str, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!([]))
+        }
+
+        async fn fetch_donki_cme(&self, _start_date: &str, _end_date: &str, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!([]))
+        }
+    }
+
     #[tokio::test]
     async fn test_get_osdr_items() {
-        let service = OsdrServiceImpl::new(MockOsdrRepo);
+        let service = OsdrServiceImpl::new(MockOsdrRepo, MockNasaClient);
         let result = service.get_osdr_items(10).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_sync_osdr_data() {
+        let service = OsdrServiceImpl::new(MockOsdrRepo, MockNasaClient);
+        let result = service.sync_osdr_data("dummy_url").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
     }
 }

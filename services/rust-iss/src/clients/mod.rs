@@ -105,6 +105,7 @@ pub trait NasaClient {
 #[async_trait]
 pub trait IssClient {
     async fn fetch_iss_position(&self) -> Result<Value>;
+    async fn fetch_iss_position_by_url(&self, url: &str) -> Result<Value>;
 }
 
 /// SpaceX API Client trait
