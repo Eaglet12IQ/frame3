@@ -45,3 +45,25 @@ INSERT INTO cms_blocks(slug, title, content, is_active)
 VALUES
 ('dashboard_experiment', 'Космические факты', '<div class="alert alert-info"><h5>Интересные факты о космосе</h5><ul><li>МКС движется со скоростью около 28 000 км/ч</li><li>JWST видит свет, излученный 13.5 млрд лет назад</li><li>Астрономические события можно наблюдать с Земли</li></ul><p><small>Обновлено: ' || NOW() || '</small></p></div>', TRUE)
 ON CONFLICT DO NOTHING;
+
+-- OSDR
+CREATE TABLE IF NOT EXISTS osdr_items(
+    id BIGSERIAL PRIMARY KEY,
+    dataset_id TEXT,
+    title TEXT,
+    status TEXT,
+    updated_at TIMESTAMPTZ,
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    raw JSONB NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_osdr_dataset_id
+ ON osdr_items(dataset_id) WHERE dataset_id IS NOT NULL;
+
+-- универсальный кэш космоданных
+CREATE TABLE IF NOT EXISTS space_cache(
+    id BIGSERIAL PRIMARY KEY,
+    source TEXT NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    payload JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_space_cache_source ON space_cache(source,fetched_at DESC);

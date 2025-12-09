@@ -58,7 +58,6 @@ async fn main() -> anyhow::Result<()> {
         .max_connections(config.database.max_connections)
         .connect(&config.database.url)
         .await?;
-    init_db(&pool).await?;
 
     // Initialize Redis repository (optional)
     let redis_repo = if let Some(redis_config) = &config.redis {
@@ -305,51 +304,4 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
-}
-
-fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(d)
-}
-
-/* ---------- DB boot ---------- */
-async fn init_db(pool: &PgPool) -> anyhow::Result<()> {
-    // ISS
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS iss_fetch_log(
-            id BIGSERIAL PRIMARY KEY,
-            fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            source_url TEXT NOT NULL,
-            payload JSONB NOT NULL
-        )"
-    ).execute(pool).await?;
-
-    // OSDR
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS osdr_items(
-            id BIGSERIAL PRIMARY KEY,
-            dataset_id TEXT,
-            title TEXT,
-            status TEXT,
-            updated_at TIMESTAMPTZ,
-            inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            raw JSONB NOT NULL
-        )"
-    ).execute(pool).await?;
-    sqlx::query(
-        "CREATE UNIQUE INDEX IF NOT EXISTS ux_osdr_dataset_id
-         ON osdr_items(dataset_id) WHERE dataset_id IS NOT NULL"
-    ).execute(pool).await?;
-
-    // универсальный кэш космоданных
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS space_cache(
-            id BIGSERIAL PRIMARY KEY,
-            source TEXT NOT NULL,
-            fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            payload JSONB NOT NULL
-        )"
-    ).execute(pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS ix_space_cache_source ON space_cache(source,fetched_at DESC)").execute(pool).await?;
-
-    Ok(())
 }
