@@ -351,6 +351,52 @@ mod tests {
         }
     }
 
+    // Mock NASA client for testing
+    #[derive(Clone)]
+    struct MockNasaClient;
+
+    #[async_trait]
+    impl NasaClient for MockNasaClient {
+        async fn fetch_osdr_datasets(&self) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn fetch_apod(&self, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn fetch_neo_feed(&self, _start_date: &str, _end_date: &str, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn fetch_donki_flr(&self, _start_date: &str, _end_date: &str, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn fetch_donki_cme(&self, _start_date: &str, _end_date: &str, _api_key: Option<&str>) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+    }
+
+    // Mock SpaceX client for testing
+    #[derive(Clone)]
+    struct MockSpaceXClient;
+
+    #[async_trait]
+    impl SpaceXClient for MockSpaceXClient {
+        async fn fetch_next_launch(&self) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn fetch_latest_launch(&self) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn fetch_upcoming_launches(&self) -> ClientResult<Value> {
+            Ok(serde_json::json!({}))
+        }
+    }
+
     #[test]
     fn test_get_last_days_range() {
         let (from, to) = get_last_days_range(5);
@@ -361,7 +407,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_space_summary() {
-        let service = CacheServiceImpl::new(MockCacheRepo);
+        let service = CacheServiceImpl::new(MockCacheRepo, MockNasaClient, MockSpaceXClient);
         let result = service.get_space_summary().await;
         assert!(result.is_ok());
         let summary = result.unwrap();

@@ -214,6 +214,31 @@ mod tests {
         }
     }
 
+    // Mock ISS client for testing
+    #[derive(Clone)]
+    struct MockIssClient;
+
+    #[async_trait]
+    impl IssClient for MockIssClient {
+        async fn fetch_iss_position(&self) -> ClientResult<Value> {
+            Ok(serde_json::json!({
+                "latitude": 51.5074,
+                "longitude": -0.1278,
+                "altitude": 408,
+                "velocity": 27624
+            }))
+        }
+
+        async fn fetch_iss_position_by_url(&self, _url: &str) -> ClientResult<Value> {
+            Ok(serde_json::json!({
+                "latitude": 51.5074,
+                "longitude": -0.1278,
+                "altitude": 408,
+                "velocity": 27624
+            }))
+        }
+    }
+
     #[test]
     fn test_extract_numeric_field() {
         let json = serde_json::json!({"latitude": 51.5074, "longitude": -0.1278});
@@ -237,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_iss_trend_analysis_no_data() {
-        let service = IssServiceImpl::new(MockIssRepo::new());
+        let service = IssServiceImpl::new(MockIssRepo::new(), MockIssClient);
         let result = service.get_iss_trend_analysis().await;
         assert!(result.is_ok());
         let trend = result.unwrap();
@@ -247,7 +272,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_latest_iss_data() {
-        let service = IssServiceImpl::new(MockIssRepo::new());
+        let service = IssServiceImpl::new(MockIssRepo::new(), MockIssClient);
         let result = service.get_latest_iss_data().await;
         assert!(result.is_ok());
     }

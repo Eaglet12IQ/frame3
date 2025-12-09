@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::domain::*;
 use crate::repo::*;
 use crate::services::*;
-use crate::clients::NasaClient;
+use crate::clients::{NasaClient, Result as ClientResult};
 
 /// Implementation of OSDR Service
 #[derive(Clone)]
